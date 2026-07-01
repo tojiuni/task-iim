@@ -1,0 +1,9 @@
+# Woodpecker CI — build + test on push.
+steps:
+  test:
+    image: node:20-slim
+    commands:
+      - npm install
+      - npm run typecheck
+      - npm test
+      - npm run smoke
