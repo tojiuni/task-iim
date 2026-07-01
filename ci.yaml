@@ -1,9 +1,18 @@
-# Woodpecker CI — build + test on push.
-steps:
-  test:
-    image: node:20-slim
-    commands:
-      - npm install
-      - npm run typecheck
-      - npm test
-      - npm run smoke
+# toji-ci config for goquest-mcp (read by toji-ci tekton/tasks/_parse_ci_config.py,
+# validated against toji-ci/schema/ci.schema.json). Mirrors ci-repos/gopedia_mcp.yaml.
+#   push -> test + build + push  artifacts.toji.homes/neunexus/goquest-mcp:{sha,latest}
+#   pr   -> test + build only (validation)
+# Unlike gopedia-mcp/brain-mcp, goquest-mcp's suites are self-contained (fakeFetch
+# mocks, no live backend), so they run as the CI gate rather than being skipped.
+domain: container
+registry: artifacts.toji.homes/neunexus
+images:
+  - name: goquest-mcp
+    dockerfile: Dockerfile
+# node:20-alpine auto-selected from the `npm` command prefix.
+test:
+  run: npm ci && npm run typecheck && npm test && npm run smoke
+# Immediately sync the goquest-mcp ArgoCD app after a successful build,
+# skipping the argocd-image-updater poll cycle (~2-5 min).
+sync_apps:
+  - goquest-mcp

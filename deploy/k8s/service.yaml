@@ -4,7 +4,10 @@ metadata:
   name: goquest-mcp
   namespace: goquest
 spec:
-  selector: { app: goquest-mcp }
+  type: ClusterIP
+  selector:
+    app: goquest-mcp
   ports:
-    - port: 8080
+    - name: http
+      port: 8080
       targetPort: 8080
