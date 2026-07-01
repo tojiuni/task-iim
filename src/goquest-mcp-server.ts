@@ -5,7 +5,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createServer } from "node:http";
 import { realpathSync } from "node:fs";
 import { createClient, type GoquestClient } from "./client.ts";
-import { readTools, writeTools } from "./tools.ts";
+import { readTools, writeTools, vcsTools } from "./tools.ts";
 import { apiTools } from "./api-tools.ts";
 import { guideTools, GUIDE_TEXT } from "./guide.ts";
 import { SERVER_NAME, SERVER_VERSION } from "./version.ts";
@@ -15,7 +15,7 @@ const API_KEY = process.env["GOQUEST_API_KEY"]?.trim() ?? "";
 
 export function buildServer(client: GoquestClient): McpServer {
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
-  for (const t of [...readTools, ...writeTools, ...apiTools, ...guideTools]) {
+  for (const t of [...readTools, ...writeTools, ...apiTools, ...guideTools, ...vcsTools]) {
     server.registerTool(t.name, { description: t.description, inputSchema: t.inputSchema }, (args: any) => t.handler(args, client));
   }
   // Also expose the guide as a readable resource.

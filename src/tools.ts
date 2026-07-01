@@ -88,7 +88,7 @@ export const writeTools: ToolDef[] = [
   {
     name: "create_ticket",
     description:
-      "Create a ticket. Idempotent: a duplicate title_name in the same project returns the existing ticket (result includes \"replayed\": true). Prefer name-based fields (workspace/project/tag_names) over UUIDs. title_name must match ^[a-z][a-z0-9]*(-[a-z0-9]+)+$ (lowercase, >=1 hyphen). ALWAYS link the source design/plan/spec doc(s) via ref_ids (e.g. geneso:whoami/spec/foo.md); for sub-tickets, inherit the parent's ref_ids. Call ticket_guide for full conventions.",
+      "Create a ticket. Idempotent: a duplicate title_name in the same project returns the existing ticket (result includes \"replayed\": true). Prefer name-based fields (workspace/project/tag_names) over UUIDs. title_name must match ^[a-z][a-z0-9]*(-[a-z0-9]+)+$ (lowercase, >=1 hyphen). ALWAYS link the source design/plan/spec doc(s) via ref_ids (e.g. geneso:whoami/spec/foo.md); for sub-tickets, inherit the parent's ref_ids. Call ticket_guide for full conventions. Name your git branch with the title_name (e.g. goq-foo or feature/goq-foo) and put the title_name in PR titles/commit messages — goquest then auto-links branches/commits/PRs to this ticket and advances its status.",
     inputSchema: {
       title: z.string().describe("Human-readable title (required)"),
       title_name: z.string().optional().describe("Stable handle, e.g. goq-vault-portforward (lowercase, >=1 hyphen)"),
@@ -163,5 +163,36 @@ export const writeTools: ToolDef[] = [
       const r = await client.request("POST", `/api/v1/tickets/${id}/comments`, { body });
       return fromResult(r);
     },
+  },
+];
+
+export const vcsTools: ToolDef[] = [
+  {
+    name: "register_vcs_repo",
+    description:
+      "Map a git repository to a goquest project so pushes/PRs auto-link to tickets. When a branch/commit/PR contains a ticket's title_name, goquest links it and (if auto_transition) advances status: branch created / PR opened → in_progress, PR merged → merge_target.",
+    inputSchema: {
+      repo_full_name: z.string().describe("e.g. tojiuni/goquest"),
+      project: z.string().optional().describe("Project name (resolved with workspace)"),
+      workspace: z.string().optional(),
+      workspace_slug: z.string().optional(),
+      provider: z.enum(["github", "gitlab", "forgejo"]).optional().describe("default github"),
+      auto_transition: z.boolean().optional().describe("default true"),
+      merge_target: z.enum(["completed", "pending_approval"]).optional().describe("PR-merge target status, default completed"),
+    },
+    handler: async (a, client) => {
+      const body: Record<string, unknown> = { repo_full_name: a.repo_full_name };
+      for (const k of ["project", "workspace", "workspace_slug", "provider", "auto_transition", "merge_target"] as const) {
+        if (a[k] !== undefined) body[k] = a[k];
+      }
+      const r = await client.request("POST", "/api/v1/vcs/repos", body);
+      return fromResult(r);
+    },
+  },
+  {
+    name: "list_vcs_repos",
+    description: "List git repositories registered for ticket auto-linking.",
+    inputSchema: {},
+    handler: async (_a, client) => fromResult(await client.request("GET", "/api/v1/vcs/repos")),
   },
 ];

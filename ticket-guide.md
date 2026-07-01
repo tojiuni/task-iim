@@ -36,3 +36,10 @@ goquest-mcp 도구로 티켓을 만들 때 따르는 규약. 정본은 이 문�
 - 필수: `title`. 권장: `title_name`, `project`(또는 `project_id`), `domain`, `ref_ids`(관련 문서).
 - domain enum: `infra|data|code|monitor|knowledge|pm`.
 - type enum: `task|bug|feature|incident|request`. priority: `urgent|high|normal|low`.
+
+## git 연동 (VCS 자동 링크)
+- 작업 branch는 **title_name을 포함**해 만든다 (예: `goq-foo` 또는 `feature/goq-foo`).
+- PR 제목/본문·commit 메시지에도 title_name을 넣으면 해당 티켓에 자동 링크된다.
+- 링크된 branch의 commit은 메시지에 title_name이 없어도 그 티켓에 상속된다.
+- 자동 전이: branch 생성 / PR opened → in_progress, PR merged → completed(또는 repo 설정 pending_approval).
+- 레포는 `register_vcs_repo`로 project에 1회 매핑해야 링크가 동작한다.
