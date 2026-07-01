@@ -140,7 +140,7 @@ export const writeTools: ToolDef[] = [
       const body: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(rest)) if (v !== undefined) body[k] = v;
       const r = await client.request("PATCH", `/api/v1/tickets/${id}`, body);
-      return r.ok ? textResult(r.data) : textResult(r.error ?? `HTTP ${r.status}`, true);
+      return fromResult(r);
     },
   },
   {
@@ -152,7 +152,7 @@ export const writeTools: ToolDef[] = [
     },
     handler: async ({ id, body }, client) => {
       const r = await client.request("POST", `/api/v1/tickets/${id}/comments`, { body });
-      return r.ok ? textResult(r.data) : textResult(r.error ?? `HTTP ${r.status}`, true);
+      return fromResult(r);
     },
   },
 ];

@@ -12,7 +12,8 @@ export function condenseOpenAPI(spec: any): string[] {
     for (const m of METHODS) {
       const op = item?.[m];
       if (!op) continue;
-      out.push(`${m.toUpperCase()} ${path} — ${op.summary ?? op.operationId ?? ""}`.trimEnd());
+      const label = op.summary ?? op.operationId;
+      out.push(label ? `${m.toUpperCase()} ${path} — ${label}` : `${m.toUpperCase()} ${path}`);
     }
   }
   return out;

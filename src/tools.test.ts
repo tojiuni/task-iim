@@ -88,3 +88,24 @@ test("comment POSTs body to /tickets/{id}/comments", async () => {
   assert.equal(seen, "POST /api/v1/tickets/t9/comments");
   assert.equal(body.body, "looks good");
 });
+
+test("create_ticket surfaces isError and hint on failure", async () => {
+  const c: GoquestClient = { async request() { return { ok: false, status: 404, error: "Not found: x." }; } };
+  const r = await wByName("create_ticket").handler({ title: "t", title_name: "goq-t" }, c);
+  assert.equal(r.isError, true);
+  assert.match(r.content[0].text, /Not found/);
+});
+
+test("update_ticket surfaces isError and hint on failure", async () => {
+  const c: GoquestClient = { async request() { return { ok: false, status: 404, error: "Not found: x." }; } };
+  const r = await wByName("update_ticket").handler({ id: "t9", status: "in_progress" }, c);
+  assert.equal(r.isError, true);
+  assert.match(r.content[0].text, /Not found/);
+});
+
+test("comment surfaces isError and hint on failure", async () => {
+  const c: GoquestClient = { async request() { return { ok: false, status: 404, error: "Not found: x." }; } };
+  const r = await wByName("comment").handler({ id: "t9", body: "hi" }, c);
+  assert.equal(r.isError, true);
+  assert.match(r.content[0].text, /Not found/);
+});

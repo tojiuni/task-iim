@@ -18,6 +18,27 @@ test("condenseOpenAPI yields one line per operation", () => {
   assert.ok(lines.includes("GET /tickets/by-name/{title_name} — Look up by title_name"));
 });
 
+test("condenseOpenAPI handles put/patch/delete and omits dangling em-dash", () => {
+  const spec = {
+    openapi: "3.1.0",
+    paths: {
+      "/tickets/{id}": {
+        put: { summary: "Replace ticket" },
+        patch: { operationId: "patchTicket" },
+        delete: {},
+      },
+    },
+  };
+  const lines = condenseOpenAPI(spec);
+  assert.ok(lines.includes("PUT /tickets/{id} — Replace ticket"));
+  assert.ok(lines.includes("PATCH /tickets/{id} — patchTicket"));
+  assert.ok(lines.includes("DELETE /tickets/{id}"));
+  const deleteLine = lines.find((l) => l.startsWith("DELETE"))!;
+  assert.equal(deleteLine, "DELETE /tickets/{id}");
+  assert.ok(!deleteLine.endsWith("—"));
+  assert.ok(!deleteLine.endsWith(" "));
+});
+
 test("list_api returns condensed list by default", async () => {
   const c: GoquestClient = { async request() { return { ok: true, status: 200, data: SPEC }; } };
   const t = apiTools.find((x) => x.name === "list_api")!;
