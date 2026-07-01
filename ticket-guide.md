@@ -1,0 +1,31 @@
+<!-- Synced from geneso goquest/guide/ticket-authoring-guide.md — edit there (source of truth), then re-sync. -->
+# goquest 티켓 작성 가이드 (에이전트/MCP용)
+
+goquest-mcp 도구로 티켓을 만들 때 따르는 규약. 정본은 이 문서이며, goquest-mcp 레포의 `ticket-guide.md`는 이 문서의 동기화 복사본이다.
+
+## title_name 규약
+- 정규식 `^[a-z][a-z0-9]*(-[a-z0-9]+)+$` — 소문자만, 하이픈 1개 이상 필수.
+- 대문자(`GOQ-…`)나 하이픈 없는 단어는 422 거부.
+- 형태: `<prefix>-<slug>`. prefix: goquest=`goq`, whoami=`who`, gopedia=`gop`, neunexus=`neunex`, infra=`infra`.
+- 예: `goq-vault-portforward`, `who-render-contract`.
+
+## 이름 기반 필드 우선
+- `workspace`/`project`/`tag_names`로 지정한다 (UUID 불필요). 미존재 태그는 자동 생성(get-or-create).
+
+## 멱등
+- 같은 project 안에서 동일 `title_name`으로 create하면 기존 티켓이 반환된다(`replayed: true`). 재시도는 안전하다.
+
+## dedup / parent 절차
+1. 생성 전 `list_tickets`로 열린 티켓(status `pending`|`in_progress`) 조회.
+2. 같은 태그 + 같은 `domain`의 티켓이 있으면 `parent_id`로 지정해 sub-ticket으로 만든다.
+3. 없으면 `parent_id` 없이 new ticket.
+
+## 상태머신
+- `pending → assigned → in_progress → (pending_approval) → completed`.
+- terminal: `completed`, `failed`, `cancelled` (추가 전이 불가).
+- `pending → in_progress` 직행 불가 — 반드시 `assigned` 경유.
+
+## 필드
+- 필수: `title`. 권장: `title_name`, `project`(또는 `project_id`), `domain`.
+- domain enum: `infra|data|code|monitor|knowledge|pm`.
+- type enum: `task|bug|feature|incident|request`. priority: `urgent|high|normal|low`.
