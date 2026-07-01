@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { GoquestClient, GqResult } from "./client.ts";
-import { readTools, writeTools } from "./tools.ts";
+import { readTools, writeTools, vcsTools } from "./tools.ts";
 
 function stubClient(handler: (m: string, p: string, b?: unknown) => GqResult): GoquestClient {
   return { async request(m, p, b) { return handler(m, p, b); } };
@@ -51,6 +51,8 @@ function wByName(name: string) {
   if (!t) throw new Error(`no tool ${name}`);
   return t;
 }
+
+const vByName = (n: string) => vcsTools.find((t) => t.name === n)!;
 
 test("create_ticket POSTs mapped body with name-based fields", async () => {
   let body: any;
@@ -110,4 +112,17 @@ test("comment surfaces isError and hint on failure", async () => {
   const r = await wByName("comment").handler({ id: "t9", body: "hi" }, c);
   assert.equal(r.isError, true);
   assert.match(r.content[0].text, /Not found/);
+});
+
+test("register_vcs_repo POSTs mapped body", async () => {
+  let seen = ""; let body: any;
+  const c: GoquestClient = { async request(m, p, b) { seen = `${m} ${p}`; body = b; return { ok: true, status: 201, data: { id: "r1" } }; } };
+  await vByName("register_vcs_repo").handler(
+    { provider: "github", repo_full_name: "tojiuni/goquest", project: "goquest", workspace: "toji", auto_transition: true, merge_target: "completed" },
+    c,
+  );
+  assert.equal(seen, "POST /api/v1/vcs/repos");
+  assert.equal(body.repo_full_name, "tojiuni/goquest");
+  assert.equal(body.project, "goquest");
+  assert.equal(body.merge_target, "completed");
 });
