@@ -83,3 +83,76 @@ export const readTools: ToolDef[] = [
       ),
   },
 ];
+
+export const writeTools: ToolDef[] = [
+  {
+    name: "create_ticket",
+    description:
+      "Create a ticket. Idempotent: a duplicate title_name in the same project returns the existing ticket (result includes \"replayed\": true). Prefer name-based fields (workspace/project/tag_names) over UUIDs. title_name must match ^[a-z][a-z0-9]*(-[a-z0-9]+)+$ (lowercase, >=1 hyphen). Call ticket_guide for full conventions.",
+    inputSchema: {
+      title: z.string().describe("Human-readable title (required)"),
+      title_name: z.string().optional().describe("Stable handle, e.g. goq-vault-portforward (lowercase, >=1 hyphen)"),
+      workspace: z.string().optional().describe("Workspace name"),
+      workspace_slug: z.string().optional().describe("Workspace slug"),
+      project: z.string().optional().describe("Project name"),
+      project_id: z.string().optional().describe("Project UUID (alternative to project name)"),
+      tag_names: z.array(z.string()).optional().describe("Tag names; missing tags are auto-created"),
+      type: z.enum(["task", "bug", "feature", "incident", "request"]).optional(),
+      priority: z.enum(["urgent", "high", "normal", "low"]).optional(),
+      domain: z.enum(["infra", "data", "code", "monitor", "knowledge", "pm"]).optional(),
+      parent_id: z.string().optional().describe("Parent ticket UUID for sub-tickets"),
+      description: z.string().optional(),
+    },
+    handler: async (a, client) => {
+      const body: Record<string, unknown> = { title: a.title };
+      if (a.title_name) body.title_name = a.title_name;
+      if (a.workspace) body.workspace_name = a.workspace;
+      if (a.workspace_slug) body.workspace_slug = a.workspace_slug;
+      if (a.project) body.project_name = a.project;
+      if (a.project_id) body.project_id = a.project_id;
+      if (a.tag_names) body.tag_names = a.tag_names;
+      if (a.type) body.type = a.type;
+      if (a.priority) body.priority = a.priority;
+      if (a.domain) body.domain = a.domain;
+      if (a.parent_id) body.parent_id = a.parent_id;
+      if (a.description) body.description = a.description;
+      const r = await client.request("POST", "/api/v1/tickets", body);
+      if (!r.ok) return textResult(r.error ?? `HTTP ${r.status}`, true);
+      return textResult({ replayed: r.replayed ?? false, ticket: r.data });
+    },
+  },
+  {
+    name: "update_ticket",
+    description:
+      "Update a ticket by UUID. Supports status transitions (pending→assigned→in_progress→completed; pending→in_progress is rejected — go via assigned).",
+    inputSchema: {
+      id: z.string().describe("Ticket UUID"),
+      status: z.string().optional().describe("New status"),
+      title: z.string().optional(),
+      title_name: z.string().optional(),
+      description: z.string().optional(),
+      priority: z.string().optional(),
+      domain: z.string().optional(),
+      assignee_id: z.string().optional(),
+    },
+    handler: async (a, client) => {
+      const { id, ...rest } = a;
+      const body: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(rest)) if (v !== undefined) body[k] = v;
+      const r = await client.request("PATCH", `/api/v1/tickets/${id}`, body);
+      return r.ok ? textResult(r.data) : textResult(r.error ?? `HTTP ${r.status}`, true);
+    },
+  },
+  {
+    name: "comment",
+    description: "Add a comment to a ticket.",
+    inputSchema: {
+      id: z.string().describe("Ticket UUID"),
+      body: z.string().describe("Comment text"),
+    },
+    handler: async ({ id, body }, client) => {
+      const r = await client.request("POST", `/api/v1/tickets/${id}/comments`, { body });
+      return r.ok ? textResult(r.data) : textResult(r.error ?? `HTTP ${r.status}`, true);
+    },
+  },
+];
