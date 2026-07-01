@@ -88,7 +88,7 @@ export const writeTools: ToolDef[] = [
   {
     name: "create_ticket",
     description:
-      "Create a ticket. Idempotent: a duplicate title_name in the same project returns the existing ticket (result includes \"replayed\": true). Prefer name-based fields (workspace/project/tag_names) over UUIDs. title_name must match ^[a-z][a-z0-9]*(-[a-z0-9]+)+$ (lowercase, >=1 hyphen). Call ticket_guide for full conventions.",
+      "Create a ticket. Idempotent: a duplicate title_name in the same project returns the existing ticket (result includes \"replayed\": true). Prefer name-based fields (workspace/project/tag_names) over UUIDs. title_name must match ^[a-z][a-z0-9]*(-[a-z0-9]+)+$ (lowercase, >=1 hyphen). ALWAYS link the source design/plan/spec doc(s) via ref_ids (e.g. geneso:whoami/spec/foo.md); for sub-tickets, inherit the parent's ref_ids. Call ticket_guide for full conventions.",
     inputSchema: {
       title: z.string().describe("Human-readable title (required)"),
       title_name: z.string().optional().describe("Stable handle, e.g. goq-vault-portforward (lowercase, >=1 hyphen)"),
@@ -101,6 +101,10 @@ export const writeTools: ToolDef[] = [
       priority: z.enum(["urgent", "high", "normal", "low"]).optional(),
       domain: z.enum(["infra", "data", "code", "monitor", "knowledge", "pm"]).optional(),
       parent_id: z.string().optional().describe("Parent ticket UUID for sub-tickets"),
+      ref_ids: z
+        .array(z.string())
+        .optional()
+        .describe("Related source docs to link, e.g. [\"geneso:whoami/spec/foo.md\", \"<repo>/docs/plans/bar.md\"]. Link the design/plan/spec that motivated the ticket; sub-tickets inherit the parent's refs. Each <=512 chars, no duplicates."),
       description: z.string().optional(),
     },
     handler: async (a, client) => {
@@ -115,6 +119,7 @@ export const writeTools: ToolDef[] = [
       if (a.priority) body.priority = a.priority;
       if (a.domain) body.domain = a.domain;
       if (a.parent_id) body.parent_id = a.parent_id;
+      if (a.ref_ids) body.ref_ids = a.ref_ids;
       if (a.description) body.description = a.description;
       const r = await client.request("POST", "/api/v1/tickets", body);
       if (!r.ok) return textResult(r.error ?? `HTTP ${r.status}`, true);
@@ -124,7 +129,7 @@ export const writeTools: ToolDef[] = [
   {
     name: "update_ticket",
     description:
-      "Update a ticket by UUID. Supports status transitions (pending→assigned→in_progress→completed; pending→in_progress is rejected — go via assigned).",
+      "Update a ticket by UUID. Supports status transitions (pending→assigned→in_progress→completed; pending→in_progress is rejected — go via assigned). ref_ids REPLACES the ticket's linked docs (send the full desired set, not a delta).",
     inputSchema: {
       id: z.string().describe("Ticket UUID"),
       status: z.string().optional().describe("New status"),
@@ -134,6 +139,10 @@ export const writeTools: ToolDef[] = [
       priority: z.string().optional(),
       domain: z.string().optional(),
       assignee_id: z.string().optional(),
+      ref_ids: z
+        .array(z.string())
+        .optional()
+        .describe("Replace linked source docs with this full set, e.g. [\"geneso:whoami/spec/foo.md\"]. Each <=512 chars, no duplicates."),
     },
     handler: async (a, client) => {
       const { id, ...rest } = a;

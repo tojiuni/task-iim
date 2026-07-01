@@ -12,6 +12,13 @@ goquest-mcp 도구로 티켓을 만들 때 따르는 규약. 정본은 이 문�
 ## 이름 기반 필드 우선
 - `workspace`/`project`/`tag_names`로 지정한다 (UUID 불필요). 미존재 태그는 자동 생성(get-or-create).
 
+## 관련 문서 링크 (ref_ids) — 필수
+- 티켓을 만들 때 그 근거가 된 **설계/플랜/스펙 문서를 `ref_ids`로 반드시 링크**한다.
+- 형식: `<소스>:<경로>` 또는 repo 상대경로. 예: `geneso:whoami/spec/whoami-ecosystem-design-direction.md`, `goquest-ios/docs/superpowers/plans/2026-06-01-contracts-approval.md`.
+- **서브태스크는 부모의 `ref_ids`를 승계**한다 — Epic/부모에만 붙이고 서브태스크에 누락하지 않는다(일부만 링크되는 흔한 실수).
+- 제약: 각 항목 512자 이하, 중복 불가. goquest는 존재 여부를 **검증하지 않으므로**(dangling 가능) 정확한 경로를 넣는다.
+- `create_ticket`의 `ref_ids`는 생성 시 부착, `update_ticket`의 `ref_ids`는 **전체 집합으로 교체**(delta 아님).
+
 ## 멱등
 - 같은 project 안에서 동일 `title_name`으로 create하면 기존 티켓이 반환된다(`replayed: true`). 재시도는 안전하다.
 
@@ -26,6 +33,6 @@ goquest-mcp 도구로 티켓을 만들 때 따르는 규약. 정본은 이 문�
 - `pending → in_progress` 직행 불가 — 반드시 `assigned` 경유.
 
 ## 필드
-- 필수: `title`. 권장: `title_name`, `project`(또는 `project_id`), `domain`.
+- 필수: `title`. 권장: `title_name`, `project`(또는 `project_id`), `domain`, `ref_ids`(관련 문서).
 - domain enum: `infra|data|code|monitor|knowledge|pm`.
 - type enum: `task|bug|feature|incident|request`. priority: `urgent|high|normal|low`.

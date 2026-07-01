@@ -56,7 +56,7 @@ test("create_ticket POSTs mapped body with name-based fields", async () => {
   let body: any;
   const c: GoquestClient = { async request(_m, _p, b) { body = b; return { ok: true, status: 201, data: { id: "n1" } }; } };
   await wByName("create_ticket").handler(
-    { title: "Do X", title_name: "goq-do-x", workspace: "toji", project: "goquest", tag_names: ["infra"], domain: "code" },
+    { title: "Do X", title_name: "goq-do-x", workspace: "toji", project: "goquest", tag_names: ["infra"], domain: "code", ref_ids: ["geneso:whoami/spec/foo.md"] },
     c,
   );
   assert.equal(body.title, "Do X");
@@ -65,6 +65,7 @@ test("create_ticket POSTs mapped body with name-based fields", async () => {
   assert.equal(body.project_name, "goquest");
   assert.deepEqual(body.tag_names, ["infra"]);
   assert.equal(body.domain, "code");
+  assert.deepEqual(body.ref_ids, ["geneso:whoami/spec/foo.md"]);
 });
 
 test("create_ticket surfaces replayed flag", async () => {
@@ -76,9 +77,10 @@ test("create_ticket surfaces replayed flag", async () => {
 test("update_ticket PATCHes /tickets/{id} with the given fields", async () => {
   let seen = ""; let body: any;
   const c: GoquestClient = { async request(m, p, b) { seen = `${m} ${p}`; body = b; return { ok: true, status: 200, data: {} }; } };
-  await wByName("update_ticket").handler({ id: "t9", status: "in_progress" }, c);
+  await wByName("update_ticket").handler({ id: "t9", status: "in_progress", ref_ids: ["geneso:whoami/spec/foo.md"] }, c);
   assert.equal(seen, "PATCH /api/v1/tickets/t9");
   assert.equal(body.status, "in_progress");
+  assert.deepEqual(body.ref_ids, ["geneso:whoami/spec/foo.md"]);
 });
 
 test("comment POSTs body to /tickets/{id}/comments", async () => {
