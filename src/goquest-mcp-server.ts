@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer } from "node:http";
+import { realpathSync } from "node:fs";
 import { createClient, type GoquestClient } from "./client.ts";
 import { readTools, writeTools } from "./tools.ts";
 import { apiTools } from "./api-tools.ts";
@@ -43,7 +44,10 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  process.stderr.write(`fatal: ${String(e)}\n`);
-  process.exit(1);
-});
+const entry = process.argv[1] ? realpathSync(process.argv[1]) : "";
+if (entry && import.meta.url === `file://${entry}`) {
+  main().catch((e) => {
+    process.stderr.write(`fatal: ${String(e)}\n`);
+    process.exit(1);
+  });
+}
