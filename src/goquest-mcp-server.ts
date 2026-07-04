@@ -31,15 +31,39 @@ export function buildServer(client: GoquestClient): McpServer {
 async function main() {
   if (!API_KEY) process.stderr.write("warning: GOQUEST_API_KEY is empty; goquest calls will 401\n");
   const client = createClient({ baseUrl: BASE_URL, apiKey: API_KEY });
-  const server = buildServer(client);
   const httpPort = process.env["MCP_HTTP_PORT"] ? parseInt(process.env["MCP_HTTP_PORT"], 10) : undefined;
   if (httpPort) {
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    createServer((req, res) => transport.handleRequest(req, res)).listen(httpPort, () =>
-      process.stderr.write(`goquest-mcp HTTP listening on :${httpPort}\n`),
-    );
-    await server.connect(transport);
+    createServer(async (req, res) => {
+      // Lightweight health endpoint for k8s probes. The MCP transport only
+      // speaks POST /mcp and 500s a plain GET, so probes must not hit it.
+      if (req.method === "GET" && (req.url === "/healthz" || req.url === "/livez" || req.url === "/readyz")) {
+        res.writeHead(200, { "content-type": "text/plain" }).end("ok\n");
+        return;
+      }
+      // Stateless streamable HTTP: a FRESH server + transport per request.
+      // A single shared transport with sessionIdGenerator:undefined only ever
+      // handles the first request and 500s every subsequent one ("already
+      // initialized") — which silently breaks every client after pod start.
+      const server = buildServer(client);
+      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+      res.on("close", () => {
+        void transport.close();
+        void server.close();
+      });
+      try {
+        await server.connect(transport);
+        await transport.handleRequest(req, res);
+      } catch (e) {
+        process.stderr.write(`mcp request error: ${String(e)}\n`);
+        if (!res.headersSent) {
+          res.writeHead(500, { "content-type": "application/json" }).end(
+            JSON.stringify({ jsonrpc: "2.0", error: { code: -32603, message: "internal error" }, id: null }),
+          );
+        }
+      }
+    }).listen(httpPort, () => process.stderr.write(`goquest-mcp HTTP listening on :${httpPort}\n`));
   } else {
+    const server = buildServer(client);
     await server.connect(new StdioServerTransport());
   }
 }
