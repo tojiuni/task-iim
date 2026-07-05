@@ -23,6 +23,14 @@ spec:
       # Reuse the goquest SA (already bound to the Vault `vso` role and created
       # by neunexus deploy/goquest/service). No dedicated SA → no vso-role gap.
       serviceAccountName: goquest
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 80
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/work
+                    operator: Exists
       imagePullSecrets:
         - name: artifacts-pull-secret
       containers:
