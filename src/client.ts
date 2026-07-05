@@ -34,7 +34,7 @@ export function mapError(status: number, bodyText: string): string {
   }
 }
 
-export function createClient(opts: { baseUrl: string; apiKey: string; fetchImpl?: typeof fetch }): GoquestClient {
+export function createClient(opts: { baseUrl: string; apiKey: string; authorizationHeader?: string; fetchImpl?: typeof fetch }): GoquestClient {
   const base = opts.baseUrl.replace(/\/$/, "");
   const doFetch = opts.fetchImpl ?? fetch;
   return {
@@ -44,7 +44,8 @@ export function createClient(opts: { baseUrl: string; apiKey: string; fetchImpl?
         res = await doFetch(`${base}${path}`, {
           method,
           headers: {
-            "X-API-Key": opts.apiKey,
+            ...(opts.apiKey ? { "X-API-Key": opts.apiKey } : {}),
+            ...(opts.authorizationHeader ? { "Authorization": opts.authorizationHeader } : {}),
             ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
           },
           ...(body !== undefined ? { body: JSON.stringify(body) } : {}),

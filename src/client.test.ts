@@ -40,3 +40,26 @@ test("non-2xx yields ok=false with mapped error hint", async () => {
 test("mapError gives transition hint on 422", () => {
   assert.match(mapError(422, "bad transition"), /transition/i);
 });
+
+test("authorizationHeader is forwarded as Authorization header", async () => {
+  let seenAuth = "";
+  const fetchImpl = (async (_u: string | URL, init?: RequestInit) => {
+    seenAuth = new Headers(init?.headers).get("Authorization") ?? "";
+    return new Response(JSON.stringify({ id: "t2" }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as unknown as typeof fetch;
+  const c = createClient({ baseUrl: "http://gq", apiKey: "", authorizationHeader: "Bearer jwt.token.here", fetchImpl });
+  const r = await c.request("GET", "/api/v1/tickets/t2");
+  assert.equal(seenAuth, "Bearer jwt.token.here");
+  assert.equal(r.ok, true);
+});
+
+test("no Authorization header sent when authorizationHeader is absent", async () => {
+  let seenAuth: string | null = "SENTINEL";
+  const fetchImpl = (async (_u: string | URL, init?: RequestInit) => {
+    seenAuth = new Headers(init?.headers).get("Authorization");
+    return new Response(JSON.stringify({ id: "t3" }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as unknown as typeof fetch;
+  const c = createClient({ baseUrl: "http://gq", apiKey: "KEY", fetchImpl });
+  await c.request("GET", "/api/v1/tickets/t3");
+  assert.equal(seenAuth, null);
+});

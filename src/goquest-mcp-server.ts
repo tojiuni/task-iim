@@ -29,8 +29,7 @@ export function buildServer(client: GoquestClient): McpServer {
 }
 
 async function main() {
-  if (!API_KEY) process.stderr.write("warning: GOQUEST_API_KEY is empty; goquest calls will 401\n");
-  const client = createClient({ baseUrl: BASE_URL, apiKey: API_KEY });
+  if (!API_KEY) process.stderr.write("warning: GOQUEST_API_KEY is empty; auth header from MCP session will be used for per-user identity\n");
   const httpPort = process.env["MCP_HTTP_PORT"] ? parseInt(process.env["MCP_HTTP_PORT"], 10) : undefined;
   if (httpPort) {
     createServer(async (req, res) => {
@@ -44,6 +43,13 @@ async function main() {
       // A single shared transport with sessionIdGenerator:undefined only ever
       // handles the first request and 500s every subsequent one ("already
       // initialized") — which silently breaks every client after pod start.
+      //
+      // Per-user JWT auth: extract Authorization from the incoming MCP HTTP
+      // request and forward it to goquest API calls so goquest can validate
+      // it against JWKS_URL and apply per-user SpiceDB authz.
+      // Anonymous requests (no header) still work — goquest applies anonymous permissions.
+      const authHeader = req.headers["authorization"] as string | undefined;
+      const client = createClient({ baseUrl: BASE_URL, apiKey: API_KEY, authorizationHeader: authHeader });
       const server = buildServer(client);
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       res.on("close", () => {
@@ -63,6 +69,8 @@ async function main() {
       }
     }).listen(httpPort, () => process.stderr.write(`goquest-mcp HTTP listening on :${httpPort}\n`));
   } else {
+    // stdio mode: no per-request auth context; use static API_KEY if set.
+    const client = createClient({ baseUrl: BASE_URL, apiKey: API_KEY });
     const server = buildServer(client);
     await server.connect(new StdioServerTransport());
   }
