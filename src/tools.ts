@@ -19,6 +19,23 @@ function fromResult(r: GqResult) {
   return textResult(r.replayed ? { replayed: true, ticket: r.data } : r.data);
 }
 
+// Matches "geneso:<path>" tokens embedded in free text (e.g. a ticket
+// description that mentions a spec/plan doc inline). The path runs until
+// whitespace or a delimiter that's clearly not part of a file path (closing
+// backtick/paren/bracket, or a trailing comma/period used as punctuation).
+const GENESO_REF_RE = /geneso:[^\s`)\],]+/g;
+
+// Auto-extracts geneso: refs mentioned in free text and merges them with any
+// explicitly-passed ref_ids, de-duplicated, explicit refs first. Returns
+// undefined when there's nothing to link, so callers can omit the field
+// entirely (matches the API's "omit for none" convention) rather than
+// sending an empty array.
+function mergeRefIds(explicit: string[] | undefined, description: string | undefined): string[] | undefined {
+  const fromText = description ? [...new Set(description.match(GENESO_REF_RE) ?? [])] : [];
+  const merged = [...new Set([...(explicit ?? []), ...fromText])];
+  return merged.length ? merged : undefined;
+}
+
 function qs(params: Record<string, string | string[] | undefined>): string {
   const sp = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
@@ -88,7 +105,7 @@ export const writeTools: ToolDef[] = [
   {
     name: "create_ticket",
     description:
-      "Create a ticket. Idempotent: a duplicate title_name in the same project returns the existing ticket (result includes \"replayed\": true). Prefer name-based fields (workspace/project/tag_names) over UUIDs. title_name must match ^[a-z][a-z0-9]*(-[a-z0-9]+)+$ (lowercase, >=1 hyphen). ALWAYS link the source design/plan/spec doc(s) via ref_ids (e.g. geneso:whoami/spec/foo.md); for sub-tickets, inherit the parent's ref_ids. Call ticket_guide for full conventions. Name your git branch with the title_name (e.g. goq-foo or feature/goq-foo) and put the title_name in PR titles/commit messages — goquest then auto-links branches/commits/PRs to this ticket and advances its status.",
+      "Create a ticket. Idempotent: a duplicate title_name in the same project returns the existing ticket (result includes \"replayed\": true). Prefer name-based fields (workspace/project/tag_names) over UUIDs. title_name must match ^[a-z][a-z0-9]*(-[a-z0-9]+)+$ (lowercase, >=1 hyphen). ALWAYS link the source design/plan/spec doc(s) via ref_ids (e.g. geneso:whoami/spec/foo.md); for sub-tickets, inherit the parent's ref_ids. As a safety net, any \"geneso:<path>\" token mentioned inline in description is also auto-extracted and merged into ref_ids (deduplicated) — but still pass ref_ids explicitly rather than relying on this, since it only catches the exact \"geneso:\" prefix form. Call ticket_guide for full conventions. Name your git branch with the title_name (e.g. goq-foo or feature/goq-foo) and put the title_name in PR titles/commit messages — goquest then auto-links branches/commits/PRs to this ticket and advances its status.",
     inputSchema: {
       title: z.string().describe("Human-readable title (required)"),
       title_name: z.string().optional().describe("Stable handle, e.g. goq-vault-portforward (lowercase, >=1 hyphen)"),
@@ -119,8 +136,9 @@ export const writeTools: ToolDef[] = [
       if (a.priority) body.priority = a.priority;
       if (a.domain) body.domain = a.domain;
       if (a.parent_id) body.parent_id = a.parent_id;
-      if (a.ref_ids) body.ref_ids = a.ref_ids;
       if (a.description) body.description = a.description;
+      const refIds = mergeRefIds(a.ref_ids, a.description);
+      if (refIds) body.ref_ids = refIds;
       const r = await client.request("POST", "/api/v1/tickets", body);
       if (!r.ok) return textResult(r.error ?? `HTTP ${r.status}`, true);
       return textResult({ replayed: r.replayed ?? false, ticket: r.data });
