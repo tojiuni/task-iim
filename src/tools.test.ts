@@ -70,6 +70,42 @@ test("create_ticket POSTs mapped body with name-based fields", async () => {
   assert.deepEqual(body.ref_ids, ["geneso:whoami/spec/foo.md"]);
 });
 
+test("create_ticket auto-extracts geneso: refs mentioned in description", async () => {
+  let body: any;
+  const c: GoquestClient = { async request(_m, _p, b) { body = b; return { ok: true, status: 201, data: { id: "n1" } }; } };
+  await wByName("create_ticket").handler(
+    {
+      title: "Do X",
+      title_name: "goq-do-x",
+      description: "## 배경\ngeneso:goquest/spec/foo-design.md 참고. 자세한 건 (geneso:goquest/spec/bar.md) 도 확인.",
+    },
+    c,
+  );
+  assert.deepEqual(body.ref_ids, ["geneso:goquest/spec/foo-design.md", "geneso:goquest/spec/bar.md"]);
+});
+
+test("create_ticket merges explicit ref_ids with description-mentioned refs, de-duplicated", async () => {
+  let body: any;
+  const c: GoquestClient = { async request(_m, _p, b) { body = b; return { ok: true, status: 201, data: { id: "n1" } }; } };
+  await wByName("create_ticket").handler(
+    {
+      title: "Do X",
+      title_name: "goq-do-x",
+      ref_ids: ["geneso:goquest/spec/foo-design.md"],
+      description: "geneso:goquest/spec/foo-design.md 참고, geneso:goquest/spec/extra.md 도 참고.",
+    },
+    c,
+  );
+  assert.deepEqual(body.ref_ids, ["geneso:goquest/spec/foo-design.md", "geneso:goquest/spec/extra.md"]);
+});
+
+test("create_ticket leaves ref_ids unset when neither explicit refs nor description mentions exist", async () => {
+  let body: any;
+  const c: GoquestClient = { async request(_m, _p, b) { body = b; return { ok: true, status: 201, data: { id: "n1" } }; } };
+  await wByName("create_ticket").handler({ title: "Do X", title_name: "goq-do-x", description: "no refs here" }, c);
+  assert.equal(body.ref_ids, undefined);
+});
+
 test("create_ticket surfaces replayed flag", async () => {
   const c: GoquestClient = { async request() { return { ok: true, status: 200, data: { id: "e1" }, replayed: true }; } };
   const r = await wByName("create_ticket").handler({ title: "t", project_id: "p", title_name: "goq-t" }, c);
