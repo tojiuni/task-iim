@@ -78,7 +78,7 @@ export const readTools: ToolDef[] = [
       project_id: z.string().optional().describe("Project UUID (required when filtering by tag)"),
       title_name: z.string().optional().describe("Exact title_name match"),
       tag: z.array(z.string()).optional().describe("Tag names (repeatable); requires project_id"),
-      status: z.string().optional().describe("pending|assigned|in_progress|pending_approval|completed|failed|cancelled"),
+      status: z.string().optional().describe("pending|assigned|in_progress|pending_approval|completed|failed|cancelled|on_hold"),
       domain: z.string().optional().describe("infra|data|code|monitor|knowledge|pm"),
       limit: z.number().int().optional(),
       offset: z.number().int().optional(),
