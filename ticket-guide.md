@@ -43,3 +43,9 @@ goquest-mcp 도구로 티켓을 만들 때 따르는 규약. 정본은 이 문�
 - 링크된 branch의 commit은 메시지에 title_name이 없어도 그 티켓에 상속된다.
 - 자동 전이: branch 생성 / PR opened → in_progress, PR merged → completed(또는 repo 설정 pending_approval).
 - 레포는 `register_vcs_repo`로 project에 1회 매핑해야 링크가 동작한다.
+
+## PR 없는 작업의 완료 처리 — 수동 전환 필수
+- VCS 자동 전이는 **git 이벤트(branch/commit/PR)가 있어야만** 동작한다. 평가·조사·문서 작성 등 코드 산출물이 없는 티켓은 아무 git 이벤트도 발생하지 않으므로 자동으로 `completed`가 되지 않는다.
+- 작업을 마쳤다고 **댓글(comment)만 남기는 것은 상태 전환이 아니다** — comment는 상태에 영향을 주지 않는다.
+- PR 없는 작업을 완료했으면 반드시 `update_ticket(status=...)`을 직접 호출해 상태를 전환한다(필요 시 `assigned`→`in_progress`→`completed` 순서로).
+- 실제로 "완료" comment는 있는데 상태가 `pending`에 멈춰 있는 사례가 있었다(2026-07-27, `brain-mcp-agentic-hop-loop`) — 이 규칙은 그 재발 방지용.
