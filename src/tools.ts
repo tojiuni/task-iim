@@ -147,7 +147,7 @@ export const writeTools: ToolDef[] = [
   {
     name: "update_ticket",
     description:
-      "Update a ticket by UUID. Supports status transitions (pending→assigned→in_progress→completed; pending→in_progress is rejected — go via assigned). ref_ids REPLACES the ticket's linked docs (send the full desired set, not a delta).",
+      "Update a ticket by UUID. Supports status transitions (pending→assigned→in_progress→completed; pending→in_progress is rejected — go via assigned). ref_ids REPLACES the ticket's linked docs (send the full desired set, not a delta). IMPORTANT: for work that produces no git branch/commit/PR (evaluation, investigation, docs-only tickets), VCS auto-link never fires, so completing the work does NOT transition the status by itself — call update_ticket(status=\"completed\") yourself. A \"comment\" documenting completion is not a status change.",
     inputSchema: {
       id: z.string().describe("Ticket UUID"),
       status: z.string().optional().describe("New status"),
@@ -172,7 +172,7 @@ export const writeTools: ToolDef[] = [
   },
   {
     name: "comment",
-    description: "Add a comment to a ticket.",
+    description: "Add a comment to a ticket. Note: a comment never changes ticket status — if the work is done, also call update_ticket(status=\"completed\") (PR-less work has no other way to transition).",
     inputSchema: {
       id: z.string().describe("Ticket UUID"),
       body: z.string().describe("Comment text"),
