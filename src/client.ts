@@ -10,6 +10,15 @@ export interface GoquestClient {
   request(method: string, path: string, body?: unknown): Promise<GqResult>;
 }
 
+// Cap for non-JSON error bodies (HTML error pages, raw stack traces, proxy
+// errors) passed through verbatim — an unbounded upstream body would
+// otherwise blow up the tool result for no informational gain.
+const MAX_ERROR_BODY_CHARS = 500;
+
+function truncate(text: string, max = MAX_ERROR_BODY_CHARS): string {
+  return text.length > max ? `${text.slice(0, max)} …[truncated]` : text;
+}
+
 // mapError turns a goquest non-2xx status into an agent-actionable hint,
 // preserving the upstream message.
 export function mapError(status: number, bodyText: string): string {
@@ -18,7 +27,7 @@ export function mapError(status: number, bodyText: string): string {
     const j = JSON.parse(bodyText);
     msg = (j && typeof j === "object" && "error" in j ? String((j as any).error) : bodyText) || bodyText;
   } catch {
-    /* keep raw */
+    msg = truncate(bodyText);
   }
   switch (status) {
     case 400:

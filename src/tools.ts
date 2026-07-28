@@ -36,6 +36,56 @@ function mergeRefIds(explicit: string[] | undefined, description: string | undef
   return merged.length ? merged : undefined;
 }
 
+// Default page size for list_tickets when the caller omits `limit` — the
+// REST backend's own default isn't part of this tool's contract, so it's
+// enforced here explicitly.
+const DEFAULT_LIST_LIMIT = 20;
+
+// Fields kept by the lean/"summary" ticket projection: enough to identify a
+// ticket and act on it, without the heavy free-text body (description) or
+// any other bulky field the backend might attach.
+const LEAN_TICKET_FIELDS = [
+  "id",
+  "title",
+  "title_name",
+  "status",
+  "priority",
+  "type",
+  "domain",
+  "project_id",
+  "workspace_id",
+  "parent_id",
+  "tags",
+  "tag_names",
+  "assignee_id",
+  "created_at",
+  "updated_at",
+] as const;
+
+// leanTicket strips heavy fields (notably `description`) from a ticket
+// object, keeping only the identifying fields above. Non-object input is
+// returned unchanged.
+function leanTicket(ticket: unknown): unknown {
+  if (!ticket || typeof ticket !== "object") return ticket;
+  const src = ticket as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const k of LEAN_TICKET_FIELDS) {
+    if (k in src) out[k] = src[k];
+  }
+  return out;
+}
+
+// leanTicketList applies leanTicket across a list_tickets response, which is
+// an envelope ({ tickets: [...], ... }) rather than a bare array — other
+// envelope fields (total, limit, offset, ...) pass through untouched.
+function leanTicketList(data: unknown): unknown {
+  if (Array.isArray(data)) return data.map(leanTicket);
+  if (data && typeof data === "object" && Array.isArray((data as any).tickets)) {
+    return { ...(data as Record<string, unknown>), tickets: (data as any).tickets.map(leanTicket) };
+  }
+  return data;
+}
+
 function qs(params: Record<string, string | string[] | undefined>): string {
   const sp = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
@@ -50,54 +100,74 @@ function qs(params: Record<string, string | string[] | undefined>): string {
 export const readTools: ToolDef[] = [
   {
     name: "get_ticket",
-    description: "Fetch a single ticket by its UUID.",
-    inputSchema: { id: z.string().describe("Ticket UUID") },
-    handler: async ({ id }, client) => fromResult(await client.request("GET", `/api/v1/tickets/${id}`)),
+    description:
+      "Fetch a single ticket by its UUID. Returns the full object (including description) by default; pass summary=true for a lean projection (id/title/status/... without description) when you only need a quick check.",
+    inputSchema: {
+      id: z.string().describe("Ticket UUID"),
+      summary: z.boolean().optional().describe("Return a lean projection (drops description and other heavy fields). Default false."),
+    },
+    handler: async ({ id, summary }, client) => {
+      const r = await client.request("GET", `/api/v1/tickets/${id}`);
+      if (summary && r.ok) return fromResult({ ...r, data: leanTicket(r.data) });
+      return fromResult(r);
+    },
   },
   {
     name: "get_ticket_by_name",
-    description: "Fetch a ticket by its human title_name within a project named by workspace + project (no UUIDs).",
+    description:
+      "Fetch a ticket by its human title_name within a project named by workspace + project (no UUIDs). Returns the full object (including description) by default; pass summary=true for a lean projection.",
     inputSchema: {
       title_name: z.string().describe("Ticket title_name, e.g. goq-vault-portforward"),
       workspace: z.string().optional().describe("Workspace name"),
       workspace_slug: z.string().optional().describe("Workspace slug (alternative to workspace)"),
       project: z.string().optional().describe("Project name"),
+      summary: z.boolean().optional().describe("Return a lean projection (drops description and other heavy fields). Default false."),
     },
-    handler: async ({ title_name, workspace, workspace_slug, project }, client) =>
-      fromResult(
-        await client.request(
-          "GET",
-          `/api/v1/tickets/by-name/${encodeURIComponent(title_name)}${qs({ workspace, workspace_slug, project })}`,
-        ),
-      ),
+    handler: async ({ title_name, workspace, workspace_slug, project, summary }, client) => {
+      const r = await client.request(
+        "GET",
+        `/api/v1/tickets/by-name/${encodeURIComponent(title_name)}${qs({ workspace, workspace_slug, project })}`,
+      );
+      if (summary && r.ok) return fromResult({ ...r, data: leanTicket(r.data) });
+      return fromResult(r);
+    },
   },
   {
     name: "list_tickets",
-    description: "List tickets with optional filters: title_name (exact), repeatable tag names, status, domain, project_id.",
+    description:
+      "List tickets with optional filters: title_name (exact), repeatable tag names, status, domain, project_id. " +
+      `Defaults to a lean/summary projection per ticket (id/title/status/priority/type/... without description) and a limit of ${DEFAULT_LIST_LIMIT} when omitted, to keep results small; pass summary=false for full ticket objects.`,
     inputSchema: {
       project_id: z.string().optional().describe("Project UUID (required when filtering by tag)"),
       title_name: z.string().optional().describe("Exact title_name match"),
       tag: z.array(z.string()).optional().describe("Tag names (repeatable); requires project_id"),
       status: z.string().optional().describe("pending|assigned|in_progress|pending_approval|completed|failed|cancelled|on_hold"),
       domain: z.string().optional().describe("infra|data|code|monitor|knowledge|pm"),
-      limit: z.number().int().optional(),
+      limit: z.number().int().optional().describe(`Max results. Defaults to ${DEFAULT_LIST_LIMIT} when omitted.`),
       offset: z.number().int().optional(),
+      summary: z
+        .boolean()
+        .optional()
+        .describe("Strip heavy fields (description, ...) from each ticket. Default true — pass false for full objects."),
     },
-    handler: async (a, client) =>
-      fromResult(
-        await client.request(
-          "GET",
-          `/api/v1/tickets${qs({
-            project_id: a.project_id,
-            title_name: a.title_name,
-            tag: a.tag,
-            status: a.status,
-            domain: a.domain,
-            limit: a.limit !== undefined ? String(a.limit) : undefined,
-            offset: a.offset !== undefined ? String(a.offset) : undefined,
-          })}`,
-        ),
-      ),
+    handler: async (a, client) => {
+      const limit = a.limit !== undefined ? a.limit : DEFAULT_LIST_LIMIT;
+      const summary = a.summary !== undefined ? a.summary : true;
+      const r = await client.request(
+        "GET",
+        `/api/v1/tickets${qs({
+          project_id: a.project_id,
+          title_name: a.title_name,
+          tag: a.tag,
+          status: a.status,
+          domain: a.domain,
+          limit: String(limit),
+          offset: a.offset !== undefined ? String(a.offset) : undefined,
+        })}`,
+      );
+      if (summary && r.ok) return fromResult({ ...r, data: leanTicketList(r.data) });
+      return fromResult(r);
+    },
   },
 ];
 

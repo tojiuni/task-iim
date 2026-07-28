@@ -41,6 +41,19 @@ test("mapError gives transition hint on 422", () => {
   assert.match(mapError(422, "bad transition"), /transition/i);
 });
 
+test("mapError caps unbounded non-JSON error bodies (e.g. HTML error pages) at ~500 chars", () => {
+  const huge = "<html>" + "x".repeat(5000) + "</html>";
+  const msg = mapError(502, huge);
+  assert.ok(msg.length < 600, `expected capped message, got length ${msg.length}`);
+  assert.match(msg, /\[truncated\]/);
+});
+
+test("mapError leaves short non-JSON bodies untouched (no spurious truncation marker)", () => {
+  const msg = mapError(502, "upstream connection refused");
+  assert.match(msg, /upstream connection refused/);
+  assert.doesNotMatch(msg, /\[truncated\]/);
+});
+
 test("authorizationHeader is forwarded as Authorization header", async () => {
   let seenAuth = "";
   const fetchImpl = (async (_u: string | URL, init?: RequestInit) => {

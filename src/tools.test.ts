@@ -39,6 +39,68 @@ test("list_tickets appends repeated tag and filters", async () => {
   assert.match(seen, /project_id=p1/);
 });
 
+test("list_tickets sends a default limit when the caller omits one", async () => {
+  let seen = "";
+  const c = stubClient((m, p) => { seen = p; return { ok: true, status: 200, data: { tickets: [] } }; });
+  await byName("list_tickets").handler({ project_id: "p1" }, c);
+  assert.match(seen, /limit=20/);
+});
+
+test("list_tickets forwards an explicit limit instead of the default", async () => {
+  let seen = "";
+  const c = stubClient((m, p) => { seen = p; return { ok: true, status: 200, data: { tickets: [] } }; });
+  await byName("list_tickets").handler({ project_id: "p1", limit: 5 }, c);
+  assert.match(seen, /limit=5/);
+  assert.doesNotMatch(seen, /limit=20/);
+});
+
+test("list_tickets strips heavy fields like description by default (summary mode)", async () => {
+  const c = stubClient(() => ({
+    ok: true,
+    status: 200,
+    data: { tickets: [{ id: "t1", title: "Do X", status: "pending", priority: "normal", type: "task", description: "a".repeat(2000) }] },
+  }));
+  const r = await byName("list_tickets").handler({ project_id: "p1" }, c);
+  const parsed = JSON.parse(r.content[0].text);
+  assert.equal(parsed.tickets[0].id, "t1");
+  assert.equal(parsed.tickets[0].title, "Do X");
+  assert.equal(parsed.tickets[0].description, undefined);
+});
+
+test("list_tickets returns full ticket objects when summary=false", async () => {
+  const c = stubClient(() => ({
+    ok: true,
+    status: 200,
+    data: { tickets: [{ id: "t1", title: "Do X", description: "full body text" }] },
+  }));
+  const r = await byName("list_tickets").handler({ project_id: "p1", summary: false }, c);
+  const parsed = JSON.parse(r.content[0].text);
+  assert.equal(parsed.tickets[0].description, "full body text");
+});
+
+test("get_ticket returns the full object (including description) by default", async () => {
+  const c = stubClient(() => ({ ok: true, status: 200, data: { id: "abc", title: "T", description: "full body text" } }));
+  const r = await byName("get_ticket").handler({ id: "abc" }, c);
+  const parsed = JSON.parse(r.content[0].text);
+  assert.equal(parsed.description, "full body text");
+});
+
+test("get_ticket strips heavy fields when summary=true", async () => {
+  const c = stubClient(() => ({ ok: true, status: 200, data: { id: "abc", title: "T", status: "pending", description: "full body text" } }));
+  const r = await byName("get_ticket").handler({ id: "abc", summary: true }, c);
+  const parsed = JSON.parse(r.content[0].text);
+  assert.equal(parsed.id, "abc");
+  assert.equal(parsed.title, "T");
+  assert.equal(parsed.description, undefined);
+});
+
+test("get_ticket_by_name strips heavy fields when summary=true", async () => {
+  const c = stubClient(() => ({ ok: true, status: 200, data: { id: "abc", title: "T", description: "full body text" } }));
+  const r = await byName("get_ticket_by_name").handler({ title_name: "goq-x", summary: true }, c);
+  const parsed = JSON.parse(r.content[0].text);
+  assert.equal(parsed.description, undefined);
+});
+
 test("error result marks isError and shows the hint", async () => {
   const c = stubClient(() => ({ ok: false, status: 404, error: "Not found: x." }));
   const r = await byName("get_ticket").handler({ id: "zzz" }, c);
