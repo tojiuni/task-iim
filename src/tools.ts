@@ -97,6 +97,40 @@ function qs(params: Record<string, string | string[] | undefined>): string {
   return s ? `?${s}` : "";
 }
 
+// goquest has no name-based project endpoints (unlike tickets' /by-name/
+// route), so project tools resolve workspace/project names to UUIDs
+// client-side by listing and matching. Returns a GqResult-shaped error on
+// no-match/ambiguous-match so callers can pass it straight to fromResult.
+async function resolveWorkspaceId(
+  client: GoquestClient,
+  { workspace, workspace_slug }: { workspace?: string; workspace_slug?: string },
+): Promise<{ id: string } | { error: GqResult }> {
+  if (!workspace && !workspace_slug) {
+    return { error: { ok: false, status: 400, error: "Bad request: workspace or workspace_slug is required." } };
+  }
+  const r = await client.request("GET", "/api/v1/workspaces");
+  if (!r.ok) return { error: r };
+  const list = (r.data as { workspaces?: Array<{ id: string; name: string; slug: string }> })?.workspaces ?? [];
+  const match = list.find((w) => (workspace_slug ? w.slug === workspace_slug : w.name === workspace));
+  if (!match) {
+    return { error: { ok: false, status: 404, error: `Not found: workspace ${workspace_slug ?? workspace}.` } };
+  }
+  return { id: match.id };
+}
+
+async function resolveProjectId(
+  client: GoquestClient,
+  workspaceId: string,
+  projectName: string,
+): Promise<{ id: string } | { error: GqResult }> {
+  const r = await client.request("GET", `/api/v1/workspaces/${workspaceId}/projects`);
+  if (!r.ok) return { error: r };
+  const list = (r.data as { projects?: Array<{ id: string; name: string }> })?.projects ?? [];
+  const match = list.find((p) => p.name === projectName);
+  if (!match) return { error: { ok: false, status: 404, error: `Not found: project ${projectName}.` } };
+  return { id: match.id };
+}
+
 export const readTools: ToolDef[] = [
   {
     name: "get_ticket",
@@ -217,7 +251,7 @@ export const writeTools: ToolDef[] = [
   {
     name: "update_ticket",
     description:
-      "Update a ticket by UUID. Supports status transitions (pending→assigned→in_progress→completed; pending→in_progress is rejected — go via assigned). ref_ids REPLACES the ticket's linked docs (send the full desired set, not a delta). IMPORTANT: for work that produces no git branch/commit/PR (evaluation, investigation, docs-only tickets), VCS auto-link never fires, so completing the work does NOT transition the status by itself — call update_ticket(status=\"completed\") yourself. A \"comment\" documenting completion is not a status change.",
+      "Update a ticket by UUID. Supports status transitions (pending→assigned→in_progress→completed; pending→in_progress is rejected — go via assigned). ref_ids REPLACES the ticket's linked docs (send the full desired set, not a delta). project_id moves the ticket to another project (target project must exist — use create_project first if it doesn't). IMPORTANT: for work that produces no git branch/commit/PR (evaluation, investigation, docs-only tickets), VCS auto-link never fires, so completing the work does NOT transition the status by itself — call update_ticket(status=\"completed\") yourself. A \"comment\" documenting completion is not a status change.",
     inputSchema: {
       id: z.string().describe("Ticket UUID"),
       status: z.string().optional().describe("New status"),
@@ -227,6 +261,7 @@ export const writeTools: ToolDef[] = [
       priority: z.string().optional(),
       domain: z.string().optional(),
       assignee_id: z.string().optional(),
+      project_id: z.string().optional().describe("Move the ticket to a different project (target project UUID)"),
       ref_ids: z
         .array(z.string())
         .optional()
@@ -250,6 +285,70 @@ export const writeTools: ToolDef[] = [
     handler: async ({ id, body }, client) => {
       const r = await client.request("POST", `/api/v1/tickets/${id}/comments`, { body });
       return fromResult(r);
+    },
+  },
+];
+
+export const projectTools: ToolDef[] = [
+  {
+    name: "create_project",
+    description:
+      "Create a project inside a workspace. NOT idempotent (unlike create_ticket) — call list_projects first to check for an existing project with the same name before creating a duplicate.",
+    inputSchema: {
+      name: z.string().describe("Project name (required)"),
+      description: z.string().optional(),
+      difficulty: z.enum(["trivial", "easy", "normal", "hard", "epic"]).optional(),
+      reward_xp: z.number().int().optional(),
+      workspace: z.string().optional().describe("Workspace name"),
+      workspace_slug: z.string().optional().describe("Workspace slug (alternative to workspace)"),
+    },
+    handler: async (a, client) => {
+      const ws = await resolveWorkspaceId(client, { workspace: a.workspace, workspace_slug: a.workspace_slug });
+      if ("error" in ws) return fromResult(ws.error);
+      const body: Record<string, unknown> = { name: a.name };
+      if (a.description !== undefined) body.description = a.description;
+      if (a.difficulty !== undefined) body.difficulty = a.difficulty;
+      if (a.reward_xp !== undefined) body.reward_xp = a.reward_xp;
+      const r = await client.request("POST", `/api/v1/workspaces/${ws.id}/projects`, body);
+      return fromResult(r);
+    },
+  },
+  {
+    name: "list_projects",
+    description: "List projects in a workspace.",
+    inputSchema: {
+      workspace: z.string().optional().describe("Workspace name"),
+      workspace_slug: z.string().optional().describe("Workspace slug (alternative to workspace)"),
+    },
+    handler: async (a, client) => {
+      const ws = await resolveWorkspaceId(client, { workspace: a.workspace, workspace_slug: a.workspace_slug });
+      if ("error" in ws) return fromResult(ws.error);
+      return fromResult(await client.request("GET", `/api/v1/workspaces/${ws.id}/projects`));
+    },
+  },
+  {
+    name: "get_project",
+    description:
+      "Fetch a project by UUID or by name, within a workspace named by workspace/workspace_slug (goquest has no top-level /projects/{id} route, so the workspace is required either way).",
+    inputSchema: {
+      id: z.string().optional().describe("Project UUID (alternative to name)"),
+      name: z.string().optional().describe("Project name (alternative to id)"),
+      workspace: z.string().optional().describe("Workspace name"),
+      workspace_slug: z.string().optional().describe("Workspace slug (alternative to workspace)"),
+    },
+    handler: async (a, client) => {
+      if (!a.id && !a.name) {
+        return fromResult({ ok: false, status: 400, error: "Bad request: either id or name is required." });
+      }
+      const ws = await resolveWorkspaceId(client, { workspace: a.workspace, workspace_slug: a.workspace_slug });
+      if ("error" in ws) return fromResult(ws.error);
+      let pid = a.id;
+      if (!pid) {
+        const pj = await resolveProjectId(client, ws.id, a.name);
+        if ("error" in pj) return fromResult(pj.error);
+        pid = pj.id;
+      }
+      return fromResult(await client.request("GET", `/api/v1/workspaces/${ws.id}/projects/${pid}`));
     },
   },
 ];

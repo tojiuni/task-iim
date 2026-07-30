@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { GoquestClient, GqResult } from "./client.ts";
-import { readTools, writeTools, vcsTools } from "./tools.ts";
+import { readTools, writeTools, projectTools, vcsTools } from "./tools.ts";
 
 function stubClient(handler: (m: string, p: string, b?: unknown) => GqResult): GoquestClient {
   return { async request(m, p, b) { return handler(m, p, b); } };
@@ -223,4 +223,115 @@ test("register_vcs_repo POSTs mapped body", async () => {
   assert.equal(body.repo_full_name, "tojiuni/goquest");
   assert.equal(body.project, "goquest");
   assert.equal(body.merge_target, "completed");
+});
+
+const pByName = (n: string) => {
+  const t = projectTools.find((x) => x.name === n);
+  if (!t) throw new Error(`no tool ${n}`);
+  return t;
+};
+
+const WORKSPACES_RESPONSE: GqResult = {
+  ok: true,
+  status: 200,
+  data: { workspaces: [{ id: "ws-toji", name: "toji", slug: "toji-1604dd" }] },
+};
+
+test("create_project resolves workspace by name then POSTs to /workspaces/{wid}/projects", async () => {
+  const calls: Array<{ m: string; p: string; b?: unknown }> = [];
+  const c: GoquestClient = {
+    async request(m, p, b) {
+      calls.push({ m, p, b });
+      if (p === "/api/v1/workspaces") return WORKSPACES_RESPONSE;
+      return { ok: true, status: 201, data: { id: "pj1", name: "proprio-mcp" } };
+    },
+  };
+  const r = await pByName("create_project").handler({ name: "proprio-mcp", description: "desc", workspace: "toji" }, c);
+  assert.equal(calls[0].p, "/api/v1/workspaces");
+  assert.equal(calls[1].m, "POST");
+  assert.equal(calls[1].p, "/api/v1/workspaces/ws-toji/projects");
+  assert.deepEqual(calls[1].b, { name: "proprio-mcp", description: "desc" });
+  assert.equal(r.isError, undefined);
+});
+
+test("create_project errors clearly when workspace name has no match", async () => {
+  const c: GoquestClient = { async request() { return WORKSPACES_RESPONSE; } };
+  const r = await pByName("create_project").handler({ name: "x", workspace: "nope" }, c);
+  assert.equal(r.isError, true);
+  assert.match(r.content[0].text, /Not found: workspace nope/);
+});
+
+test("create_project errors when neither workspace nor workspace_slug is given", async () => {
+  const c: GoquestClient = { async request() { throw new Error("should not be called"); } };
+  const r = await pByName("create_project").handler({ name: "x" }, c);
+  assert.equal(r.isError, true);
+  assert.match(r.content[0].text, /workspace or workspace_slug is required/);
+});
+
+test("list_projects resolves workspace by slug then GETs its projects", async () => {
+  const calls: Array<{ m: string; p: string }> = [];
+  const c: GoquestClient = {
+    async request(m, p) {
+      calls.push({ m, p });
+      if (p === "/api/v1/workspaces") return WORKSPACES_RESPONSE;
+      return { ok: true, status: 200, data: { projects: [] } };
+    },
+  };
+  await pByName("list_projects").handler({ workspace_slug: "toji-1604dd" }, c);
+  assert.equal(calls[1].p, "/api/v1/workspaces/ws-toji/projects");
+});
+
+test("get_project by id resolves workspace then GETs the nested project route", async () => {
+  const calls: Array<{ m: string; p: string }> = [];
+  const c: GoquestClient = {
+    async request(m, p) {
+      calls.push({ m, p });
+      if (p === "/api/v1/workspaces") return WORKSPACES_RESPONSE;
+      return { ok: true, status: 200, data: { id: "pj1" } };
+    },
+  };
+  await pByName("get_project").handler({ id: "pj1", workspace: "toji" }, c);
+  assert.equal(calls[1].p, "/api/v1/workspaces/ws-toji/projects/pj1");
+});
+
+test("get_project by name resolves workspace + project id then GETs the project", async () => {
+  const calls: Array<{ m: string; p: string }> = [];
+  const c: GoquestClient = {
+    async request(m, p) {
+      calls.push({ m, p });
+      if (p === "/api/v1/workspaces") return WORKSPACES_RESPONSE;
+      if (p === "/api/v1/workspaces/ws-toji/projects") {
+        return { ok: true, status: 200, data: { projects: [{ id: "pj1", name: "proprio-mcp" }] } };
+      }
+      return { ok: true, status: 200, data: { id: "pj1", name: "proprio-mcp" } };
+    },
+  };
+  await pByName("get_project").handler({ name: "proprio-mcp", workspace: "toji" }, c);
+  assert.equal(calls.at(-1)?.p, "/api/v1/workspaces/ws-toji/projects/pj1");
+});
+
+test("get_project errors clearly when name has no match in the workspace", async () => {
+  const c: GoquestClient = {
+    async request(_m, p) {
+      if (p === "/api/v1/workspaces") return WORKSPACES_RESPONSE;
+      return { ok: true, status: 200, data: { projects: [] } };
+    },
+  };
+  const r = await pByName("get_project").handler({ name: "nope", workspace: "toji" }, c);
+  assert.equal(r.isError, true);
+  assert.match(r.content[0].text, /Not found: project nope/);
+});
+
+test("get_project errors when neither id nor name is given", async () => {
+  const c: GoquestClient = { async request() { throw new Error("should not be called"); } };
+  const r = await pByName("get_project").handler({ workspace: "toji" }, c);
+  assert.equal(r.isError, true);
+  assert.match(r.content[0].text, /either id or name is required/);
+});
+
+test("update_ticket includes project_id (ticket-move) in the PATCH body", async () => {
+  let body: any;
+  const c: GoquestClient = { async request(_m, _p, b) { body = b; return { ok: true, status: 200, data: {} }; } };
+  await wByName("update_ticket").handler({ id: "t1", project_id: "pj2" }, c);
+  assert.equal(body.project_id, "pj2");
 });
