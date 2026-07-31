@@ -212,6 +212,26 @@ test("comment surfaces isError and hint on failure", async () => {
   assert.match(r.content[0].text, /Not found/);
 });
 
+test("reopen_ticket POSTs id + reason to /tickets/{id}/reopen", async () => {
+  let seen = ""; let body: any;
+  const c: GoquestClient = {
+    async request(m, p, b) { seen = `${m} ${p}`; body = b; return { ok: true, status: 200, data: { id: "t9", status: "in_progress" } }; },
+  };
+  const r = await wByName("reopen_ticket").handler({ id: "t9", reason: "closed in error" }, c);
+  assert.equal(seen, "POST /api/v1/tickets/t9/reopen");
+  assert.deepEqual(body, { reason: "closed in error" });
+  assert.equal(r.isError, undefined);
+});
+
+test("reopen_ticket surfaces isError and hint on failure (e.g. not terminal)", async () => {
+  const c: GoquestClient = {
+    async request() { return { ok: false, status: 422, error: "Unprocessable (likely an invalid status transition): only completed or cancelled tickets can be reopened (current: in_progress)." }; },
+  };
+  const r = await wByName("reopen_ticket").handler({ id: "t9", reason: "oops" }, c);
+  assert.equal(r.isError, true);
+  assert.match(r.content[0].text, /only completed or cancelled tickets can be reopened/);
+});
+
 test("register_vcs_repo POSTs mapped body", async () => {
   let seen = ""; let body: any;
   const c: GoquestClient = { async request(m, p, b) { seen = `${m} ${p}`; body = b; return { ok: true, status: 201, data: { id: "r1" } }; } };
