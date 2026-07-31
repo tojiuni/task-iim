@@ -251,7 +251,7 @@ export const writeTools: ToolDef[] = [
   {
     name: "update_ticket",
     description:
-      "Update a ticket by UUID. Supports status transitions (pending→assigned→in_progress→completed; pending→in_progress is rejected — go via assigned). ref_ids REPLACES the ticket's linked docs (send the full desired set, not a delta). project_id moves the ticket to another project (target project must exist — use create_project first if it doesn't). IMPORTANT: for work that produces no git branch/commit/PR (evaluation, investigation, docs-only tickets), VCS auto-link never fires, so completing the work does NOT transition the status by itself — call update_ticket(status=\"completed\") yourself. A \"comment\" documenting completion is not a status change.",
+      "Update a ticket by UUID. Supports status transitions (pending→assigned→in_progress→completed; pending→in_progress is rejected — go via assigned). completed/cancelled are terminal — status here can NEVER move a ticket out of them (always rejected, by design); use reopen_ticket instead. ref_ids REPLACES the ticket's linked docs (send the full desired set, not a delta). project_id moves the ticket to another project (target project must exist — use create_project first if it doesn't). IMPORTANT: for work that produces no git branch/commit/PR (evaluation, investigation, docs-only tickets), VCS auto-link never fires, so completing the work does NOT transition the status by itself — call update_ticket(status=\"completed\") yourself. A \"comment\" documenting completion is not a status change.",
     inputSchema: {
       id: z.string().describe("Ticket UUID"),
       status: z.string().optional().describe("New status"),
@@ -272,6 +272,19 @@ export const writeTools: ToolDef[] = [
       const body: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(rest)) if (v !== undefined) body[k] = v;
       const r = await client.request("PATCH", `/api/v1/tickets/${id}`, body);
+      return fromResult(r);
+    },
+  },
+  {
+    name: "reopen_ticket",
+    description:
+      "Move a completed or cancelled ticket back to in_progress. This is the ONLY way out of a terminal status — update_ticket(status=...) always rejects transitions out of completed/cancelled (by design; terminals must go through this audited escape hatch). reason is required and is recorded in the audit log (e.g. \"closed in error by a VCS auto-link false positive\", \"reopened per requester\").",
+    inputSchema: {
+      id: z.string().describe("Ticket UUID"),
+      reason: z.string().describe("Why this terminal ticket is being reopened (required, audit-logged)"),
+    },
+    handler: async ({ id, reason }, client) => {
+      const r = await client.request("POST", `/api/v1/tickets/${id}/reopen`, { reason });
       return fromResult(r);
     },
   },
