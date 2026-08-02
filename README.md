@@ -1,7 +1,8 @@
-# goquest-mcp
+# goquest-iim
 
 MCP server exposing goquest ticket operations to LLM agents. Proxies the goquest
-REST/OpenAPI contract (Phase 1).
+REST/OpenAPI contract (Phase 1). Renamed from `goquest-mcp` per the `iim`(이음)
+service-interface naming convention (`neunexus/reference/iim-convention.md`).
 
 ## Tools
 - `create_ticket` (idempotent on title_name), `get_ticket`, `get_ticket_by_name`,

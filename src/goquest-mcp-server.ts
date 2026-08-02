@@ -67,7 +67,7 @@ async function main() {
           );
         }
       }
-    }).listen(httpPort, () => process.stderr.write(`goquest-mcp HTTP listening on :${httpPort}\n`));
+    }).listen(httpPort, () => process.stderr.write(`goquest-iim HTTP listening on :${httpPort}\n`));
   } else {
     // stdio mode: no per-request auth context; use static API_KEY if set.
     const client = createClient({ baseUrl: BASE_URL, apiKey: API_KEY });
