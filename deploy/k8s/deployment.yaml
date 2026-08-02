@@ -1,12 +1,12 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: goquest-mcp
+  name: goquest-iim
   namespace: goquest
   labels:
-    app: goquest-mcp
+    app: goquest-iim
   annotations:
-    argocd-image-updater.argoproj.io/image-list: "app=artifacts.toji.homes/neunexus/goquest-mcp:latest"
+    argocd-image-updater.argoproj.io/image-list: "app=artifacts.toji.homes/neunexus/goquest-iim:latest"
     argocd-image-updater.argoproj.io/app.update-strategy: digest
     argocd-image-updater.argoproj.io/write-back-method: argocd
 spec:
@@ -14,11 +14,11 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      app: goquest-mcp
+      app: goquest-iim
   template:
     metadata:
       labels:
-        app: goquest-mcp
+        app: goquest-iim
     spec:
       # Reuse the goquest SA (already bound to the Vault `vso` role and created
       # by neunexus deploy/goquest/service). No dedicated SA → no vso-role gap.
@@ -34,8 +34,8 @@ spec:
       imagePullSecrets:
         - name: artifacts-pull-secret
       containers:
-        - name: goquest-mcp
-          image: artifacts.toji.homes/neunexus/goquest-mcp:latest
+        - name: goquest-iim
+          image: artifacts.toji.homes/neunexus/goquest-iim:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
@@ -53,7 +53,7 @@ spec:
             - name: GOQUEST_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: goquest-mcp
+                  name: goquest-iim
                   key: api-key
           # StreamableHTTP serves only MCP protocol requests (no /healthz route),
           # so probe the listening socket rather than an HTTP path.
