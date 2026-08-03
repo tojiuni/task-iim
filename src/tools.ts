@@ -289,6 +289,22 @@ export const writeTools: ToolDef[] = [
     },
   },
   {
+    name: "split_text_into_subtasks",
+    description:
+      "Split free-form text into child tickets under parent_id: goquest runs cogito's SplitContent pipeline on text and bulk-creates the resulting sections as real sub-tickets of parent_id. Only parent_id is needed — no workspace/project name resolution required (unlike create_ticket). Returns per-section results (index, id, ok, error?) plus a created count; partial failures are possible, check each result's ok.",
+    inputSchema: {
+      parent_id: z.string().describe("Parent ticket UUID to create sub-tickets under"),
+      text: z.string().min(1).describe("Free-form text to split into sub-tickets (required, non-empty)"),
+      title: z.string().optional().describe("Optional title hint for the split, e.g. used as a prefix for section titles"),
+    },
+    handler: async ({ parent_id, text, title }, client) => {
+      const body: Record<string, unknown> = { text };
+      if (title !== undefined) body.title = title;
+      const r = await client.request("POST", `/api/v1/tickets/${parent_id}/subtasks/from-text`, body);
+      return fromResult(r);
+    },
+  },
+  {
     name: "comment",
     description: "Add a comment to a ticket. Note: a comment never changes ticket status — if the work is done, also call update_ticket(status=\"completed\") (PR-less work has no other way to transition).",
     inputSchema: {

@@ -6,7 +6,8 @@ service-interface naming convention (`neunexus/reference/iim-convention.md`).
 
 ## Tools
 - `create_ticket` (idempotent on title_name), `get_ticket`, `get_ticket_by_name`,
-  `list_tickets`, `update_ticket`, `comment`
+  `list_tickets`, `update_ticket`, `reopen_ticket`, `comment`
+- `split_text_into_subtasks` — split text into child tickets under a parent_id via cogito
 - `list_api` — discover goquest API operations (condensed or `full`)
 - `ticket_guide` — ticket authoring conventions (also resource `goquest://ticket-guide`)
 
