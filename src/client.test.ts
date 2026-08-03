@@ -76,3 +76,34 @@ test("no Authorization header sent when authorizationHeader is absent", async ()
   await c.request("GET", "/api/v1/tickets/t3");
   assert.equal(seenAuth, null);
 });
+
+// goq-mcp-jwt-only-auth: goquest's auth middleware short-circuits JWT parsing
+// once X-API-Key has already set a requester_id, so sending both headers made
+// the per-account Authorization JWT silently inert. When a session JWT is
+// present, X-API-Key must be omitted entirely (goquest-ui never sends it).
+test("X-API-Key is omitted when authorizationHeader is present, even if apiKey is set", async () => {
+  let seenApiKey: string | null = "SENTINEL";
+  let seenAuth = "";
+  const fetchImpl = (async (_u: string | URL, init?: RequestInit) => {
+    const h = new Headers(init?.headers);
+    seenApiKey = h.get("X-API-Key");
+    seenAuth = h.get("Authorization") ?? "";
+    return new Response(JSON.stringify({ id: "t4" }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as unknown as typeof fetch;
+  const c = createClient({ baseUrl: "http://gq", apiKey: "SERVICE-KEY", authorizationHeader: "Bearer jwt.token.here", fetchImpl });
+  const r = await c.request("GET", "/api/v1/tickets/t4");
+  assert.equal(seenApiKey, null, "X-API-Key must not be sent when a session JWT is present");
+  assert.equal(seenAuth, "Bearer jwt.token.here");
+  assert.equal(r.ok, true);
+});
+
+test("X-API-Key is still sent as fallback when no authorizationHeader is present", async () => {
+  let seenApiKey: string | null = "SENTINEL";
+  const fetchImpl = (async (_u: string | URL, init?: RequestInit) => {
+    seenApiKey = new Headers(init?.headers).get("X-API-Key");
+    return new Response(JSON.stringify({ id: "t5" }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as unknown as typeof fetch;
+  const c = createClient({ baseUrl: "http://gq", apiKey: "SERVICE-KEY", fetchImpl });
+  await c.request("GET", "/api/v1/tickets/t5");
+  assert.equal(seenApiKey, "SERVICE-KEY");
+});
