@@ -50,10 +50,22 @@ export function createClient(opts: { baseUrl: string; apiKey: string; authorizat
     async request(method, path, body) {
       let res: Response;
       try {
+        // goquest-iim-jwt-only-auth: goquest's auth middleware chain runs
+        // X-API-Key before JWT and short-circuits JWT parsing entirely once
+        // APIKeyMiddleware has already set a requester_id (internal/auth/jwt.go
+        // Middleware: `if RequesterID(r) != "" { skip }`) — so sending both
+        // headers on every request, as this client used to, made the
+        // per-account Authorization JWT silently inert, always falling back
+        // to X-API-Key's fixed service identity. goquest-ui never sends
+        // X-API-Key at all (Authorization-only, see its axios interceptor) —
+        // match that: prefer the session JWT and only fall back to the static
+        // API key when no Authorization header is present (stdio mode /
+        // legacy single-account sessions with no per-session JWT).
+        const authed = Boolean(opts.authorizationHeader);
         res = await doFetch(`${base}${path}`, {
           method,
           headers: {
-            ...(opts.apiKey ? { "X-API-Key": opts.apiKey } : {}),
+            ...(!authed && opts.apiKey ? { "X-API-Key": opts.apiKey } : {}),
             ...(opts.authorizationHeader ? { "Authorization": opts.authorizationHeader } : {}),
             ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
           },
