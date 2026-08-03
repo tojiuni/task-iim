@@ -46,34 +46,57 @@ export function mapError(status: number, bodyText: string): string {
 export function createClient(opts: { baseUrl: string; apiKey: string; authorizationHeader?: string; fetchImpl?: typeof fetch }): GoquestClient {
   const base = opts.baseUrl.replace(/\/$/, "");
   const doFetch = opts.fetchImpl ?? fetch;
+
+  // goquest-iim-jwt-only-auth: goquest's auth middleware chain runs X-API-Key
+  // before JWT and short-circuits JWT parsing entirely once APIKeyMiddleware
+  // has already set a requester_id (internal/auth/jwt.go Middleware: `if
+  // RequesterID(r) != "" { skip }`) — so sending both headers on every
+  // request, as this client used to, made the per-account Authorization JWT
+  // silently inert, always falling back to X-API-Key's fixed service
+  // identity. goquest-ui never sends X-API-Key at all (Authorization-only,
+  // see its axios interceptor) — match that: prefer the session JWT.
+  async function attempt(method: string, path: string, body: unknown, useApiKey: boolean): Promise<Response> {
+    return doFetch(`${base}${path}`, {
+      method,
+      headers: {
+        ...(useApiKey && opts.apiKey ? { "X-API-Key": opts.apiKey } : {}),
+        ...(!useApiKey && opts.authorizationHeader ? { "Authorization": opts.authorizationHeader } : {}),
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+  }
+
   return {
     async request(method, path, body) {
+      const authed = Boolean(opts.authorizationHeader);
       let res: Response;
       try {
-        // goquest-iim-jwt-only-auth: goquest's auth middleware chain runs
-        // X-API-Key before JWT and short-circuits JWT parsing entirely once
-        // APIKeyMiddleware has already set a requester_id (internal/auth/jwt.go
-        // Middleware: `if RequesterID(r) != "" { skip }`) — so sending both
-        // headers on every request, as this client used to, made the
-        // per-account Authorization JWT silently inert, always falling back
-        // to X-API-Key's fixed service identity. goquest-ui never sends
-        // X-API-Key at all (Authorization-only, see its axios interceptor) —
-        // match that: prefer the session JWT and only fall back to the static
-        // API key when no Authorization header is present (stdio mode /
-        // legacy single-account sessions with no per-session JWT).
-        const authed = Boolean(opts.authorizationHeader);
-        res = await doFetch(`${base}${path}`, {
-          method,
-          headers: {
-            ...(!authed && opts.apiKey ? { "X-API-Key": opts.apiKey } : {}),
-            ...(opts.authorizationHeader ? { "Authorization": opts.authorizationHeader } : {}),
-            ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-          },
-          ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-        });
+        res = await attempt(method, path, body, !authed);
       } catch (err) {
         return { ok: false, status: 0, error: `network error contacting ${base}: ${String(err)}` };
       }
+
+      // goq-mcp-jwt-expiry-fallback: the MCP client (Claude Code) reads the
+      // Authorization header from .mcp.json once per connection and caches
+      // it for the session's lifetime — it does NOT pick up tokenhub-
+      // refresher's periodic re-writes without a manual `/mcp` reconnect. A
+      // JWT that goes stale mid-session would otherwise hard-fail every
+      // goquest MCP call with 401 until the user notices and reconnects
+      // (goquest-ui avoids this via an axios 401-retry interceptor that
+      // refreshes the token; MCP has no equivalent refresh flow). Retry once
+      // with the static X-API-Key so the tool call still succeeds — at the
+      // cost of falling back to a less precise identity for that one call —
+      // rather than surfacing a hard failure for a problem the caller can't
+      // self-heal mid-request.
+      if (authed && res.status === 401 && opts.apiKey) {
+        try {
+          res = await attempt(method, path, body, true);
+        } catch (err) {
+          return { ok: false, status: 0, error: `network error contacting ${base}: ${String(err)}` };
+        }
+      }
+
       const text = await res.text();
       if (!res.ok) {
         return { ok: false, status: res.status, error: mapError(res.status, text) };

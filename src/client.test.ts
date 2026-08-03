@@ -107,3 +107,62 @@ test("X-API-Key is still sent as fallback when no authorizationHeader is present
   await c.request("GET", "/api/v1/tickets/t5");
   assert.equal(seenApiKey, "SERVICE-KEY");
 });
+
+// goq-mcp-jwt-expiry-fallback: the MCP client caches .mcp.json's Authorization
+// header for the session's lifetime and doesn't pick up tokenhub-refresher's
+// periodic re-writes without a manual /mcp reconnect, so a stale JWT would
+// otherwise hard-fail every call with 401 until the user notices. Retry once
+// with X-API-Key so the tool call still succeeds.
+test("a 401 on the JWT attempt is retried once with X-API-Key, and succeeds", async () => {
+  const seenAuthByCall: (string | null)[] = [];
+  const seenApiKeyByCall: (string | null)[] = [];
+  let calls = 0;
+  const fetchImpl = (async (_u: string | URL, init?: RequestInit) => {
+    calls += 1;
+    const h = new Headers(init?.headers);
+    seenAuthByCall.push(h.get("Authorization"));
+    seenApiKeyByCall.push(h.get("X-API-Key"));
+    if (calls === 1) {
+      return new Response(JSON.stringify({ error: "invalid token: token has invalid claims: token is expired" }), {
+        status: 401,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ id: "t6" }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as unknown as typeof fetch;
+  const c = createClient({ baseUrl: "http://gq", apiKey: "SERVICE-KEY", authorizationHeader: "Bearer expired.jwt.here", fetchImpl });
+  const r = await c.request("GET", "/api/v1/tickets/t6");
+  assert.equal(calls, 2, "expected exactly one retry");
+  assert.equal(seenAuthByCall[0], "Bearer expired.jwt.here");
+  assert.equal(seenApiKeyByCall[0], null, "first attempt must still be JWT-only");
+  assert.equal(seenAuthByCall[1], null, "retry must not also send the stale Authorization header");
+  assert.equal(seenApiKeyByCall[1], "SERVICE-KEY");
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.data, { id: "t6" });
+});
+
+test("a 401 with no apiKey configured is not retried and propagates as-is", async () => {
+  let calls = 0;
+  const fetchImpl = (async () => {
+    calls += 1;
+    return new Response(JSON.stringify({ error: "invalid token" }), { status: 401, headers: { "content-type": "application/json" } });
+  }) as unknown as typeof fetch;
+  const c = createClient({ baseUrl: "http://gq", apiKey: "", authorizationHeader: "Bearer expired.jwt.here", fetchImpl });
+  const r = await c.request("GET", "/api/v1/tickets/t7");
+  assert.equal(calls, 1, "no apiKey to fall back to, so no retry");
+  assert.equal(r.ok, false);
+  assert.equal(r.status, 401);
+});
+
+test("a non-401 error on the JWT attempt is not retried with X-API-Key", async () => {
+  let calls = 0;
+  const fetchImpl = (async () => {
+    calls += 1;
+    return new Response(JSON.stringify({ error: "not found" }), { status: 404, headers: { "content-type": "application/json" } });
+  }) as unknown as typeof fetch;
+  const c = createClient({ baseUrl: "http://gq", apiKey: "SERVICE-KEY", authorizationHeader: "Bearer valid.jwt.here", fetchImpl });
+  const r = await c.request("GET", "/api/v1/tickets/missing");
+  assert.equal(calls, 1, "404 must not trigger the 401-only fallback");
+  assert.equal(r.ok, false);
+  assert.equal(r.status, 404);
+});
