@@ -305,6 +305,25 @@ export const writeTools: ToolDef[] = [
     },
   },
   {
+    name: "decompose_question_into_subtasks",
+    description:
+      "Split a chat question into child tickets under parent_id: goquest runs cogito's DecomposeQuestion pipeline (mode=task-candidates) on the message (plus optional history) and bulk-creates the resulting task candidates as real sub-tickets of parent_id. Only parent_id is needed — no workspace/project name resolution required (unlike create_ticket). Returns per-candidate results (index, id, ok, error?) plus a created count; partial failures are possible, check each result's ok.",
+    inputSchema: {
+      parent_id: z.string().describe("Parent ticket UUID to create sub-tickets under"),
+      message: z.string().min(1).describe("Chat question/message to decompose into sub-tickets (required, non-empty)"),
+      history: z
+        .array(z.object({ role: z.string(), content: z.string() }))
+        .optional()
+        .describe("Optional prior chat turns for context, e.g. [{role: \"user\", content: \"...\"}, {role: \"assistant\", content: \"...\"}]"),
+    },
+    handler: async ({ parent_id, message, history }, client) => {
+      const body: Record<string, unknown> = { message };
+      if (history && history.length) body.history = history;
+      const r = await client.request("POST", `/api/v1/tickets/${parent_id}/subtasks/from-chat`, body);
+      return fromResult(r);
+    },
+  },
+  {
     name: "comment",
     description: "Add a comment to a ticket. Note: a comment never changes ticket status — if the work is done, also call update_ticket(status=\"completed\") (PR-less work has no other way to transition).",
     inputSchema: {
