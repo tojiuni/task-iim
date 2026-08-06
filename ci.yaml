@@ -15,6 +15,9 @@ images:
     # :latest, so argocd-image-updater had nothing to roll. always_build:true is
     # correct here — same fix as goquest-service/brain/whoami.
     always_build: true
+    manifest_writeback:
+      repo: tojiuni/toji-cd
+      path: bots/goquest-iim
 # node:20-alpine auto-selected from the `npm` command prefix.
 test:
   run: npm ci && npm run typecheck && npm test && npm run smoke
