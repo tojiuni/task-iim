@@ -101,6 +101,14 @@ test("get_ticket_by_name strips heavy fields when summary=true", async () => {
   assert.equal(parsed.description, undefined);
 });
 
+test("list_comments calls GET /api/v1/tickets/{id}/comments", async () => {
+  let seen = "";
+  const c = stubClient((m, p) => { seen = `${m} ${p}`; return { ok: true, status: 200, data: { comments: [] } }; });
+  const r = await byName("list_comments").handler({ id: "abc" }, c);
+  assert.equal(seen, "GET /api/v1/tickets/abc/comments");
+  assert.match(r.content[0].text, /"comments": \[\]/);
+});
+
 test("error result marks isError and shows the hint", async () => {
   const c = stubClient(() => ({ ok: false, status: 404, error: "Not found: x." }));
   const r = await byName("get_ticket").handler({ id: "zzz" }, c);
