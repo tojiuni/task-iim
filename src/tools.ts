@@ -203,6 +203,15 @@ export const readTools: ToolDef[] = [
       return fromResult(r);
     },
   },
+  {
+    name: "list_comments",
+    description:
+      "List comments on a ticket, oldest first. Use this to read what another session/agent already said before acting on a ticket — e.g. verifying a completion comment's stated reasoning before trusting it. Internal-only comments (is_internal=true) are included only for staff-scoped API keys; customer-scoped keys only ever see external comments.",
+    inputSchema: {
+      id: z.string().describe("Ticket UUID"),
+    },
+    handler: async ({ id }, client) => fromResult(await client.request("GET", `/api/v1/tickets/${id}/comments`)),
+  },
 ];
 
 export const writeTools: ToolDef[] = [
