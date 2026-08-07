@@ -19,6 +19,13 @@ goquest-mcp 도구로 티켓을 만들 때 따르는 규약. 정본은 이 문�
 - 제약: 각 항목 512자 이하, 중복 불가. goquest는 존재 여부를 **검증하지 않으므로**(dangling 가능) 정확한 경로를 넣는다.
 - `create_ticket`의 `ref_ids`는 생성 시 부착, `update_ticket`의 `ref_ids`는 **전체 집합으로 교체**(delta 아님).
 
+## 티켓 간 관계 (ticket-to-ticket relations)
+- `add_ticket_relation`/`list_ticket_relations`/`remove_ticket_relation`로 티켓을 다른 **티켓**과 연결한다(문서가 아님 — 문서는 `ref_ids` 사용).
+- `blocks` (역방향: `blocked_by`) — 순차 의존, 이 티켓이 먼저 끝나야 대상 티켓이 진행 가능.
+- `depends_on` (역방향: `affects`) — 의미적/인과적 영향, 상태를 게이팅하지 않음.
+- `duplicates` (역방향: `duplicated_by`) — 이 티켓은 대상 티켓의 중복.
+- 모든 add는 멱등이다.
+
 ## 멱등
 - 같은 project 안에서 동일 `title_name`으로 create하면 기존 티켓이 반환된다(`replayed: true`). 재시도는 안전하다.
 

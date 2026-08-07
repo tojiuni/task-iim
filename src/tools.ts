@@ -212,6 +212,18 @@ export const readTools: ToolDef[] = [
     },
     handler: async ({ id }, client) => fromResult(await client.request("GET", `/api/v1/tickets/${id}/comments`)),
   },
+  {
+    name: "list_ticket_relations",
+    description:
+      "List every ticket-to-ticket relation where this ticket is either side. Each entry already includes a server-derived direction ('outgoing'|'incoming'), a human-readable label (blocks/blocked_by, depends_on/affects, duplicates/duplicated_by), and a summary of the other-side ticket (other_ticket_id/other_ticket_title_name/other_ticket_title/other_ticket_status) — no need to fetch each ticket separately or derive direction yourself. Entries for relations whose other-side ticket you cannot view are omitted (not an error — they're simply absent from the list).",
+    inputSchema: {
+      id: z.string().describe("Ticket UUID"),
+    },
+    handler: async ({ id }, client) => {
+      const r = await client.request("GET", `/api/v1/tickets/${id}/relations`);
+      return fromResult(r);
+    },
+  },
 ];
 
 export const writeTools: ToolDef[] = [
@@ -294,6 +306,33 @@ export const writeTools: ToolDef[] = [
     },
     handler: async ({ id, reason }, client) => {
       const r = await client.request("POST", `/api/v1/tickets/${id}/reopen`, { reason });
+      return fromResult(r);
+    },
+  },
+  {
+    name: "add_ticket_relation",
+    description:
+      "Link this ticket to another ticket with a typed relation. blocks: this ticket must finish before the target can proceed (blocked_by is the reverse view). depends_on: this ticket was influenced/affected by the target (affects is the reverse view) — semantic, does not gate status. duplicates: this ticket is a duplicate of the target (duplicated_by is the reverse view). Idempotent: re-adding the same (id, to_ticket_id, relation_type) returns the existing link, not an error. Requires manage permission on the source ticket AND view permission on the target ticket (404 if the target doesn't exist or isn't visible to you). This is for linking TICKETS to other TICKETS — use ref_ids for linking to design/plan/spec DOCUMENTS instead.",
+    inputSchema: {
+      id: z.string().describe("Source ticket UUID (the 'from' side)"),
+      relation_type: z.enum(["blocks", "depends_on", "duplicates"]).describe("blocks | depends_on | duplicates"),
+      to_ticket_id: z.string().describe("Target ticket UUID (the 'to' side)"),
+    },
+    handler: async ({ id, relation_type, to_ticket_id }, client) => {
+      const r = await client.request("POST", `/api/v1/tickets/${id}/relations`, { relation_type, to_ticket_id });
+      return fromResult(r);
+    },
+  },
+  {
+    name: "remove_ticket_relation",
+    description:
+      "Remove a ticket-to-ticket relation link by its relation id (from list_ticket_relations). Requires manage permission on the ticket. Returns 404 if the relation id doesn't exist OR doesn't belong to this ticket (ownership-scoped — not unconditionally idempotent).",
+    inputSchema: {
+      id: z.string().describe("Source ticket UUID (the path ticket the relation must belong to)"),
+      relation_id: z.string().describe("Relation UUID to remove (from list_ticket_relations)"),
+    },
+    handler: async ({ id, relation_id }, client) => {
+      const r = await client.request("DELETE", `/api/v1/tickets/${id}/relations/${relation_id}`);
       return fromResult(r);
     },
   },
