@@ -248,6 +248,8 @@ export const writeTools: ToolDef[] = [
         .optional()
         .describe("Related source docs to link, e.g. [\"geneso:whoami/spec/foo.md\", \"<repo>/docs/plans/bar.md\"]. Link the design/plan/spec that motivated the ticket; sub-tickets inherit the parent's refs. Each <=512 chars, no duplicates."),
       description: z.string().optional(),
+      start_at: z.string().optional().describe("ISO8601 start date, e.g. \"2026-08-10T00:00:00Z\" — the beginning of the ticket's scheduled range (used by the roadmap viewer). Optional; pairs with due_at."),
+      due_at: z.string().optional().describe("ISO8601 due date, e.g. \"2026-08-15T00:00:00Z\"."),
     },
     handler: async (a, client) => {
       const body: Record<string, unknown> = { title: a.title };
@@ -262,6 +264,8 @@ export const writeTools: ToolDef[] = [
       if (a.domain) body.domain = a.domain;
       if (a.parent_id) body.parent_id = a.parent_id;
       if (a.description) body.description = a.description;
+      if (a.start_at) body.start_at = a.start_at;
+      if (a.due_at) body.due_at = a.due_at;
       const refIds = mergeRefIds(a.ref_ids, a.description);
       if (refIds) body.ref_ids = refIds;
       const r = await client.request("POST", "/api/v1/tickets", body);
@@ -287,6 +291,8 @@ export const writeTools: ToolDef[] = [
         .array(z.string())
         .optional()
         .describe("Replace linked source docs with this full set, e.g. [\"geneso:whoami/spec/foo.md\"]. Each <=512 chars, no duplicates."),
+      start_at: z.string().optional().describe("ISO8601 start date, e.g. \"2026-08-10T00:00:00Z\" — the beginning of the ticket's scheduled range (used by the roadmap viewer)."),
+      due_at: z.string().optional().describe("ISO8601 due date, e.g. \"2026-08-15T00:00:00Z\"."),
     },
     handler: async (a, client) => {
       const { id, ...rest } = a;

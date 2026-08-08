@@ -148,6 +148,25 @@ test("create_ticket POSTs mapped body with name-based fields", async () => {
   assert.deepEqual(body.ref_ids, ["geneso:whoami/spec/foo.md"]);
 });
 
+test("create_ticket includes start_at/due_at in the POST body when given", async () => {
+  let body: any;
+  const c: GoquestClient = { async request(_m, _p, b) { body = b; return { ok: true, status: 201, data: { id: "n1" } }; } };
+  await wByName("create_ticket").handler(
+    { title: "Do X", title_name: "goq-do-x", start_at: "2026-08-10T00:00:00Z", due_at: "2026-08-15T00:00:00Z" },
+    c,
+  );
+  assert.equal(body.start_at, "2026-08-10T00:00:00Z");
+  assert.equal(body.due_at, "2026-08-15T00:00:00Z");
+});
+
+test("create_ticket omits start_at/due_at from the POST body when not given", async () => {
+  let body: any;
+  const c: GoquestClient = { async request(_m, _p, b) { body = b; return { ok: true, status: 201, data: { id: "n1" } }; } };
+  await wByName("create_ticket").handler({ title: "Do X", title_name: "goq-do-x" }, c);
+  assert.equal(body.start_at, undefined);
+  assert.equal(body.due_at, undefined);
+});
+
 test("create_ticket auto-extracts geneso: refs mentioned in description", async () => {
   let body: any;
   const c: GoquestClient = { async request(_m, _p, b) { body = b; return { ok: true, status: 201, data: { id: "n1" } }; } };
@@ -386,4 +405,12 @@ test("update_ticket includes project_id (ticket-move) in the PATCH body", async 
   const c: GoquestClient = { async request(_m, _p, b) { body = b; return { ok: true, status: 200, data: {} }; } };
   await wByName("update_ticket").handler({ id: "t1", project_id: "pj2" }, c);
   assert.equal(body.project_id, "pj2");
+});
+
+test("update_ticket includes start_at/due_at in the PATCH body when given", async () => {
+  let body: any;
+  const c: GoquestClient = { async request(_m, _p, b) { body = b; return { ok: true, status: 200, data: {} }; } };
+  await wByName("update_ticket").handler({ id: "t1", start_at: "2026-08-10T00:00:00Z", due_at: "2026-08-15T00:00:00Z" }, c);
+  assert.equal(body.start_at, "2026-08-10T00:00:00Z");
+  assert.equal(body.due_at, "2026-08-15T00:00:00Z");
 });
