@@ -20,7 +20,7 @@ const stub: GoquestClient = {
 // src/goquest-mcp-server.ts) — the count assertion below exists precisely to
 // catch a group silently left out here (projectTools was, until this fix).
 const all = [...readTools, ...writeTools, ...projectTools, ...apiTools, ...guideTools, ...vcsTools];
-assert.equal(all.length, 17, `expected 17 tools, got ${all.length}`);
+assert.equal(all.length, 20, `expected 20 tools, got ${all.length}`);
 
 for (const t of all) {
   const sampleArgs: Record<string, any> = {
@@ -41,6 +41,9 @@ for (const t of all) {
     ticket_guide: {},
     register_vcs_repo: { repo_full_name: "tojiuni/goquest", project: "goquest" },
     list_vcs_repos: {},
+    add_ticket_relation: { id: "x", relation_type: "blocks", to_ticket_id: "y" },
+    remove_ticket_relation: { id: "x", relation_id: "r1" },
+    list_ticket_relations: { id: "x" },
   }[t.name] ?? {};
   const r = await t.handler(sampleArgs, stub);
   assert.ok(r.content[0].text.length > 0, `${t.name} returned empty`);

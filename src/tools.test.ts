@@ -116,6 +116,14 @@ test("error result marks isError and shows the hint", async () => {
   assert.match(r.content[0].text, /Not found/);
 });
 
+test("list_ticket_relations GETs relations for the ticket", async () => {
+  let seenPath = "";
+  const c = stubClient((m, p) => { seenPath = `${m} ${p}`; return { ok: true, status: 200, data: { relations: [] } }; });
+  const r = await byName("list_ticket_relations").handler({ id: "a1" }, c);
+  assert.equal(seenPath, "GET /api/v1/tickets/a1/relations");
+  assert.match(r.content[0].text, /"relations": \[\]/);
+});
+
 function wByName(name: string) {
   const t = writeTools.find((x) => x.name === name);
   if (!t) throw new Error(`no tool ${name}`);
@@ -238,6 +246,22 @@ test("reopen_ticket surfaces isError and hint on failure (e.g. not terminal)", a
   const r = await wByName("reopen_ticket").handler({ id: "t9", reason: "oops" }, c);
   assert.equal(r.isError, true);
   assert.match(r.content[0].text, /only completed or cancelled tickets can be reopened/);
+});
+
+test("add_ticket_relation POSTs relation_type and to_ticket_id", async () => {
+  let seenPath = "", seenBody: unknown;
+  const c = stubClient((m, p, b) => { seenPath = `${m} ${p}`; seenBody = b; return { ok: true, status: 200, data: { relation: { id: "r1" }, created: true } }; });
+  const r = await wByName("add_ticket_relation").handler({ id: "a1", relation_type: "blocks", to_ticket_id: "b1" }, c);
+  assert.equal(seenPath, "POST /api/v1/tickets/a1/relations");
+  assert.deepEqual(seenBody, { relation_type: "blocks", to_ticket_id: "b1" });
+  assert.match(r.content[0].text, /"created": true/);
+});
+
+test("remove_ticket_relation DELETEs the relation under the path ticket", async () => {
+  let seenPath = "";
+  const c = stubClient((m, p) => { seenPath = `${m} ${p}`; return { ok: true, status: 204 }; });
+  await wByName("remove_ticket_relation").handler({ id: "a1", relation_id: "r1" }, c);
+  assert.equal(seenPath, "DELETE /api/v1/tickets/a1/relations/r1");
 });
 
 test("register_vcs_repo POSTs mapped body", async () => {
