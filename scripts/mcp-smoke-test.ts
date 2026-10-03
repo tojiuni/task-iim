@@ -1,7 +1,7 @@
 // In-process smoke test: builds the server against a stub client and exercises
 // each tool handler, then verifies buildServer wires without throwing.
 import assert from "node:assert/strict";
-import { buildServer } from "../src/goquest-mcp-server.ts";
+import { buildServer } from "../src/task-mcp-server.ts";
 import { readTools, writeTools, projectTools, vcsTools } from "../src/tools.ts";
 import { apiTools } from "../src/api-tools.ts";
 import { guideTools } from "../src/guide.ts";
@@ -17,7 +17,7 @@ const stub: GoquestClient = {
 };
 
 // This array must track every tool group buildServer registers (see
-// src/goquest-mcp-server.ts) — the count assertion below exists precisely to
+// src/task-mcp-server.ts) — the count assertion below exists precisely to
 // catch a group silently left out here (projectTools was, until this fix).
 const all = [...readTools, ...writeTools, ...projectTools, ...apiTools, ...guideTools, ...vcsTools];
 assert.equal(all.length, 20, `expected 20 tools, got ${all.length}`);

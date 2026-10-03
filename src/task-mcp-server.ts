@@ -21,8 +21,8 @@ export function buildServer(client: GoquestClient): McpServer {
   // Also expose the guide as a readable resource.
   server.registerResource(
     "ticket-guide",
-    "goquest://ticket-guide",
-    { title: "goquest ticket authoring guide", mimeType: "text/markdown" },
+    "task-iim://ticket-guide",
+    { title: "ticket authoring guide", mimeType: "text/markdown" },
     async (uri) => ({ contents: [{ uri: uri.href, mimeType: "text/markdown", text: GUIDE_TEXT }] }),
   );
   return server;
@@ -67,7 +67,7 @@ async function main() {
           );
         }
       }
-    }).listen(httpPort, () => process.stderr.write(`goquest-iim HTTP listening on :${httpPort}\n`));
+    }).listen(httpPort, () => process.stderr.write(`task-iim HTTP listening on :${httpPort}\n`));
   } else {
     // stdio mode: no per-request auth context; use static API_KEY if set.
     const client = createClient({ baseUrl: BASE_URL, apiKey: API_KEY });

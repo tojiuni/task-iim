@@ -1,12 +1,12 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: goquest-iim
+  name: task-iim
   namespace: goquest
   labels:
-    app: goquest-iim
+    app: task-iim
   annotations:
-    argocd-image-updater.argoproj.io/image-list: "app=artifacts.toji.homes/neunexus/goquest-iim:latest"
+    argocd-image-updater.argoproj.io/image-list: "app=artifacts.toji.homes/neunexus/task-iim:latest"
     argocd-image-updater.argoproj.io/app.update-strategy: digest
     argocd-image-updater.argoproj.io/write-back-method: argocd
 spec:
@@ -14,11 +14,11 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      app: goquest-iim
+      app: task-iim
   template:
     metadata:
       labels:
-        app: goquest-iim
+        app: task-iim
     spec:
       # Reuse the goquest SA (already bound to the Vault `vso` role and created
       # by neunexus deploy/goquest/service). No dedicated SA → no vso-role gap.
@@ -34,8 +34,8 @@ spec:
       imagePullSecrets:
         - name: artifacts-pull-secret
       containers:
-        - name: goquest-iim
-          image: artifacts.toji.homes/neunexus/goquest-iim:latest
+        - name: task-iim
+          image: artifacts.toji.homes/neunexus/task-iim:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
@@ -45,7 +45,7 @@ spec:
             - name: GOQUEST_API_URL
               value: "http://goquest-service.goquest.svc.cluster.local:8080"
             # Presence of MCP_HTTP_PORT switches the server stdio→StreamableHTTP
-            # (src/goquest-mcp-server.ts). Must match containerPort.
+            # (src/task-mcp-server.ts). Must match containerPort.
             - name: MCP_HTTP_PORT
               value: "8080"
             # goquest API key — same key goquest-service accepts, from Vault
@@ -53,7 +53,7 @@ spec:
             - name: GOQUEST_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: goquest-iim
+                  name: task-iim
                   key: api-key
           # StreamableHTTP serves only MCP protocol requests (no /healthz route),
           # so probe the listening socket rather than an HTTP path.

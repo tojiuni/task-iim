@@ -1,7 +1,7 @@
 <!-- Synced from geneso goquest/guide/ticket-authoring-guide.md — edit there (source of truth), then re-sync. -->
 # goquest 티켓 작성 가이드 (에이전트/MCP용)
 
-goquest-mcp 도구로 티켓을 만들 때 따르는 규약. 정본은 이 문서이며, goquest-mcp 레포의 `ticket-guide.md`는 이 문서의 동기화 복사본이다.
+task-iim 도구로 티켓을 만들 때 따르는 규약. 정본은 이 문서이며, task-iim 레포의 `ticket-guide.md`는 이 문서의 동기화 복사본이다.
 
 ## title_name 규약
 - 정규식 `^[a-z][a-z0-9]*(-[a-z0-9]+)+$` — 소문자만, 하이픈 1개 이상 필수.

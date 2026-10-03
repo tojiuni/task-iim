@@ -47,7 +47,7 @@ export function createClient(opts: { baseUrl: string; apiKey: string; authorizat
   const base = opts.baseUrl.replace(/\/$/, "");
   const doFetch = opts.fetchImpl ?? fetch;
 
-  // goquest-iim-jwt-only-auth: goquest's auth middleware chain runs X-API-Key
+  // task-iim-jwt-only-auth: goquest's auth middleware chain runs X-API-Key
   // before JWT and short-circuits JWT parsing entirely once APIKeyMiddleware
   // has already set a requester_id (internal/auth/jwt.go Middleware: `if
   // RequesterID(r) != "" { skip }`) — so sending both headers on every
