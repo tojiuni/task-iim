@@ -6,4 +6,4 @@ COPY . .
 ENV MCP_HTTP_PORT=8080
 EXPOSE 8080
 USER node
-CMD ["npx", "tsx", "src/goquest-mcp-server.ts"]
+CMD ["npx", "tsx", "src/task-mcp-server.ts"]

@@ -1,13 +1,13 @@
-# toji-ci config for goquest-iim (read by toji-ci tekton/tasks/_parse_ci_config.py,
+# toji-ci config for task-iim (read by toji-ci tekton/tasks/_parse_ci_config.py,
 # validated against toji-ci/schema/ci.schema.json). Mirrors ci-repos/gopedia_mcp.yaml.
-#   push -> test + build + push  artifacts.toji.homes/neunexus/goquest-iim:{sha,latest}
+#   push -> test + build + push  artifacts.toji.homes/neunexus/task-iim:{sha,latest}
 #   pr   -> test + build only (validation)
-# Unlike gopedia-mcp/brain-mcp, goquest-iim's suites are self-contained (fakeFetch
+# Unlike gopedia-mcp/brain-mcp, task-iim's suites are self-contained (fakeFetch
 # mocks, no live backend), so they run as the CI gate rather than being skipped.
 domain: container
 registry: artifacts.toji.homes/neunexus
 images:
-  - name: goquest-iim
+  - name: task-iim
     dockerfile: Dockerfile
     # No include/context globs map source changes to this image, so hybrid
     # change-detection selects [] on push (select_changed_images returns []) and
@@ -17,11 +17,11 @@ images:
     always_build: true
     manifest_writeback:
       repo: tojiuni/toji-cd
-      path: bots/goquest-iim
+      path: bots/task-iim
 # node:20-alpine auto-selected from the `npm` command prefix.
 test:
   run: npm ci && npm run typecheck && npm test && npm run smoke
-# Immediately sync the goquest-iim ArgoCD app after a successful build,
+# Immediately sync the task-iim ArgoCD app after a successful build,
 # skipping the argocd-image-updater poll cycle (~2-5 min).
 sync_apps:
-  - goquest-iim
+  - task-iim
