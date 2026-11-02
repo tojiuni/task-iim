@@ -26,6 +26,8 @@ export function mapError(status: number, bodyText: string): string {
   try {
     const j = JSON.parse(bodyText);
     msg = (j && typeof j === "object" && "error" in j ? String((j as any).error) : bodyText) || bodyText;
+    // goquest approval denials carry a machine-readable reason (e.g. kind_not_delegable)
+    if (j && typeof j === "object" && typeof (j as any).reason === "string") msg += ` (reason: ${(j as any).reason})`;
   } catch {
     msg = truncate(bodyText);
   }

@@ -455,6 +455,112 @@ export const projectTools: ToolDef[] = [
   },
 ];
 
+const approvalSubject = z
+  .object({
+    repo: z.string().optional().describe("owner/name, e.g. tojiuni/goquest"),
+    pr: z.number().int().optional().describe("PR number"),
+    head_sha: z.string().optional().describe("PR head commit being approved (merge requires it)"),
+    doc: z.string().optional().describe("geneso doc path (design / deviation)"),
+    doc_sha: z.string().optional(),
+    target: z.string().optional().describe("free target for infra/ops, e.g. vault:tekton-ci policy"),
+  })
+  .describe("What is being approved. merge: repo+pr+head_sha. design: doc. infra/ops: repo+pr, doc or target. deviation: doc.");
+
+// Approval records (goquest spec GQT-SPC-DRAFT-20261029). Who requested and who
+// decided are derived by the server from the caller's identity, so none of
+// these tools take a requester/decider argument.
+export const approvalTools: ToolDef[] = [
+  {
+    name: "request_approval",
+    description:
+      "Ask for an approval on a ticket and record it as a pending approval record. kind: design | merge | infra | ops | deviation (ticket is reserved). The requester is you (derived from your session identity). For kind=merge, an older head_sha approval (pending or approved) for the same repo+pr is superseded automatically, and requesting the same thing twice while pending returns Conflict. deviation requires within_direction (true only if the change stays inside the approved design direction). Attach evidence (pr, ci_run, test, doc, comment refs) so the decider can verify. This does not approve anything by itself.",
+    inputSchema: {
+      ticket_id: z.string().describe("Ticket UUID the approval belongs to"),
+      kind: z.enum(["design", "merge", "infra", "ops", "deviation"]),
+      subject: approvalSubject,
+      request_note: z.string().optional().describe("One or two lines: what is being approved and why"),
+      evidence: z
+        .array(z.object({ type: z.string(), ref: z.string(), note: z.string().optional() }))
+        .optional()
+        .describe("Supporting references, e.g. {type:'ci_run', ref:'https://...'}"),
+      within_direction: z.boolean().optional().describe("deviation only: stays within the approved design direction"),
+    },
+    handler: async ({ ticket_id, kind, subject, request_note, evidence, within_direction }, client) => {
+      const body: Record<string, unknown> = { kind, subject };
+      if (request_note !== undefined) body["request_note"] = request_note;
+      if (evidence !== undefined) body["evidence"] = evidence;
+      if (within_direction !== undefined) body["within_direction"] = within_direction;
+      return fromResult(await client.request("POST", `/api/v1/tickets/${ticket_id}/approvals`, body));
+    },
+  },
+  {
+    name: "list_approvals",
+    description:
+      "List a ticket's approval records, newest first (use this to check whether your request was decided). Filter with status: pending | approved | rejected | revision_requested | withdrawn | superseded.",
+    inputSchema: {
+      ticket_id: z.string().describe("Ticket UUID"),
+      status: z.enum(["pending", "approved", "rejected", "revision_requested", "withdrawn", "superseded"]).optional(),
+      limit: z.number().int().optional(),
+      offset: z.number().int().optional(),
+    },
+    handler: async ({ ticket_id, status, limit, offset }, client) => {
+      const q = qs({
+        status,
+        limit: limit !== undefined ? String(limit) : undefined,
+        offset: offset !== undefined ? String(offset) : undefined,
+      });
+      return fromResult(await client.request("GET", `/api/v1/tickets/${ticket_id}/approvals${q}`));
+    },
+  },
+  {
+    name: "get_approval",
+    description:
+      "Fetch one approval record with its status transitions (events). Returns Not found if the approval is not on that ticket.",
+    inputSchema: {
+      ticket_id: z.string().describe("Ticket UUID"),
+      approval_id: z.string().describe("Approval UUID"),
+    },
+    handler: async ({ ticket_id, approval_id }, client) =>
+      fromResult(await client.request("GET", `/api/v1/tickets/${ticket_id}/approvals/${approval_id}`)),
+  },
+  {
+    name: "decide_approval",
+    description:
+      "Decide a pending approval: approved | rejected | revision_requested (rejected and revision_requested need a note). You cannot choose who you decide as: the server derives decided_by and basis. A session account may decide ONLY as a delegated decision (basis=desk_delegated) when an active delegation rule covers it, the kind is delegable (merge, or a deviation with within_direction=true), and you are not the requester; then user_ref (where the user granted this go-ahead, e.g. a ticket comment or message reference) is required. design, infra, ops and direction-changing deviations are person-only: expect Forbidden with reason kind_not_delegable, and ask the user to decide in the goquest UI. Never decide your own request.",
+    inputSchema: {
+      ticket_id: z.string().describe("Ticket UUID"),
+      approval_id: z.string().describe("Approval UUID"),
+      decision: z.enum(["approved", "rejected", "revision_requested"]),
+      note: z.string().optional().describe("Reason; required for rejected and revision_requested"),
+      user_ref: z.string().optional().describe("Reference to the user's go-ahead; required for a delegated decision"),
+    },
+    handler: async ({ ticket_id, approval_id, decision, note, user_ref }, client) => {
+      const body: Record<string, unknown> = { decision };
+      if (note !== undefined) body["note"] = note;
+      if (user_ref !== undefined) body["user_ref"] = user_ref;
+      return fromResult(await client.request("POST", `/api/v1/tickets/${ticket_id}/approvals/${approval_id}/decision`, body));
+    },
+  },
+  {
+    name: "withdraw_approval",
+    description:
+      "Withdraw your own pending approval request (only the requester can; Conflict if it is no longer pending).",
+    inputSchema: {
+      ticket_id: z.string().describe("Ticket UUID"),
+      approval_id: z.string().describe("Approval UUID"),
+      note: z.string().optional(),
+    },
+    handler: async ({ ticket_id, approval_id, note }, client) =>
+      fromResult(
+        await client.request(
+          "POST",
+          `/api/v1/tickets/${ticket_id}/approvals/${approval_id}/withdraw`,
+          note !== undefined ? { note } : {},
+        ),
+      ),
+  },
+];
+
 export const vcsTools: ToolDef[] = [
   {
     name: "register_vcs_repo",

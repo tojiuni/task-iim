@@ -414,3 +414,67 @@ test("update_ticket includes start_at/due_at in the PATCH body when given", asyn
   assert.equal(body.start_at, "2026-08-10T00:00:00Z");
   assert.equal(body.due_at, "2026-08-15T00:00:00Z");
 });
+
+import { approvalTools } from "./tools.ts";
+function approvalTool(name: string) {
+  const t = approvalTools.find((x) => x.name === name);
+  if (!t) throw new Error(`no tool ${name}`);
+  return t;
+}
+
+test("approvalTools exposes the five spec tools and none takes a requester/decider", () => {
+  assert.deepEqual(
+    approvalTools.map((t) => t.name).sort(),
+    ["decide_approval", "get_approval", "list_approvals", "request_approval", "withdraw_approval"],
+  );
+  for (const t of approvalTools) {
+    for (const k of Object.keys(t.inputSchema)) {
+      assert.ok(!/requested_by|decided_by|basis|operator/.test(k), `${t.name} must not take ${k}`);
+    }
+  }
+});
+
+test("request_approval POSTs kind/subject/evidence to the ticket's approvals", async () => {
+  let seen: any;
+  const c = stubClient((m, p, b) => { seen = { m, p, b }; return { ok: true, status: 201, data: { id: "a1", status: "pending" } }; });
+  const r = await approvalTool("request_approval").handler({
+    ticket_id: "t1", kind: "merge", subject: { repo: "o/r", pr: 3, head_sha: "abc" },
+    request_note: "n", evidence: [{ type: "ci_run", ref: "https://ci/1" }],
+  }, c);
+  assert.equal(seen.m, "POST");
+  assert.equal(seen.p, "/api/v1/tickets/t1/approvals");
+  assert.deepEqual(seen.b, { kind: "merge", subject: { repo: "o/r", pr: 3, head_sha: "abc" }, request_note: "n", evidence: [{ type: "ci_run", ref: "https://ci/1" }] });
+  assert.match(r.content[0].text, /"pending"/);
+});
+
+test("list_approvals builds status/limit/offset query", async () => {
+  let seen = "";
+  const c = stubClient((m, p) => { seen = `${m} ${p}`; return { ok: true, status: 200, data: { approvals: [] } }; });
+  await approvalTool("list_approvals").handler({ ticket_id: "t1", status: "pending", limit: 5, offset: 10 }, c);
+  assert.equal(seen, "GET /api/v1/tickets/t1/approvals?status=pending&limit=5&offset=10");
+  await approvalTool("list_approvals").handler({ ticket_id: "t1" }, c);
+  assert.equal(seen, "GET /api/v1/tickets/t1/approvals");
+});
+
+test("get_approval and withdraw_approval hit the ticket-nested routes", async () => {
+  const seen: string[] = [];
+  const bodies: unknown[] = [];
+  const c = stubClient((m, p, b) => { seen.push(`${m} ${p}`); bodies.push(b); return { ok: true, status: 200, data: {} }; });
+  await approvalTool("get_approval").handler({ ticket_id: "t1", approval_id: "a1" }, c);
+  await approvalTool("withdraw_approval").handler({ ticket_id: "t1", approval_id: "a1", note: "oops" }, c);
+  await approvalTool("withdraw_approval").handler({ ticket_id: "t1", approval_id: "a1" }, c);
+  assert.deepEqual(seen, ["GET /api/v1/tickets/t1/approvals/a1", "POST /api/v1/tickets/t1/approvals/a1/withdraw", "POST /api/v1/tickets/t1/approvals/a1/withdraw"]);
+  assert.deepEqual(bodies, [undefined, { note: "oops" }, {}]);
+});
+
+test("decide_approval sends only decision/note/user_ref and surfaces the denial reason", async () => {
+  let seen: any;
+  const c = stubClient((m, p, b) => { seen = { m, p, b }; return { ok: true, status: 200, data: { status: "approved" } }; });
+  await approvalTool("decide_approval").handler({ ticket_id: "t1", approval_id: "a1", decision: "approved", user_ref: "ticket comment 7", note: "ok" }, c);
+  assert.equal(seen.p, "/api/v1/tickets/t1/approvals/a1/decision");
+  assert.deepEqual(seen.b, { decision: "approved", note: "ok", user_ref: "ticket comment 7" });
+
+  const { mapError } = await import("./client.ts");
+  const msg = mapError(403, JSON.stringify({ error: "decision denied: kind_not_delegable", reason: "kind_not_delegable" }));
+  assert.match(msg, /reason: kind_not_delegable/);
+});
