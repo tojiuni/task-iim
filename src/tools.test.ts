@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { GoquestClient, GqResult } from "./client.ts";
@@ -559,4 +560,22 @@ test("mark_mentions_seen is an error only when nothing was marked, and caps ids 
   const c2 = stubClient((m, p) => { seen = p; return { ok: true, status: 204 }; });
   await mentionTool("mark_mentions_seen").handler({ ids: ["a/../b?x=1"] }, c2);
   assert.equal(seen, "/api/v1/mentions/a%2F..%2Fb%3Fx%3D1/seen");
+});
+
+test("update_ticket sends priority and only accepts the four known values", async () => {
+  let body: any;
+  const c = stubClient((m, p, b) => { body = b; return { ok: true, status: 200, data: { id: "t9", priority: "high" } }; });
+  await wByName("update_ticket").handler({ id: "t9", priority: "high" }, c);
+  assert.deepEqual(body, { priority: "high" });
+
+  const schema = z.object(wByName("update_ticket").inputSchema as any);
+  for (const ok of ["urgent", "high", "normal", "low"]) assert.equal(schema.safeParse({ id: "x", priority: ok }).success, true, ok);
+  for (const bad of ["medium", "HIGH", "", "p1"]) assert.equal(schema.safeParse({ id: "x", priority: bad }).success, false, bad);
+});
+
+test("update_ticket passes goquest's ignored_fields through so the agent can see what was not applied", async () => {
+  const c = stubClient(() => ({ ok: true, status: 200, data: { id: "t9", priority: "high", ignored_fields: ["type"] } }));
+  const r = await wByName("update_ticket").handler({ id: "t9", priority: "high" }, c);
+  assert.equal(JSON.parse(r.content[0].text).ignored_fields[0], "type");
+  assert.match(wByName("update_ticket").description, /ignored_fields/);
 });
