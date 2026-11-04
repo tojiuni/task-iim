@@ -276,14 +276,14 @@ export const writeTools: ToolDef[] = [
   {
     name: "update_ticket",
     description:
-      "Update a ticket by UUID. Supports status transitions (pending→assigned→in_progress→completed; pending→in_progress is rejected — go via assigned). completed/cancelled are terminal — status here can NEVER move a ticket out of them (always rejected, by design); use reopen_ticket instead. ref_ids REPLACES the ticket's linked docs (send the full desired set, not a delta). project_id moves the ticket to another project (target project must exist — use create_project first if it doesn't). IMPORTANT: for work that produces no git branch/commit/PR (evaluation, investigation, docs-only tickets), VCS auto-link never fires, so completing the work does NOT transition the status by itself — call update_ticket(status=\"completed\") yourself. A \"comment\" documenting completion is not a status change.",
+      "Update a ticket by UUID. Supports status transitions (pending→assigned→in_progress→completed; pending→in_progress is rejected — go via assigned). completed/cancelled are terminal — status here can NEVER move a ticket out of them (always rejected, by design); use reopen_ticket instead. ref_ids REPLACES the ticket's linked docs (send the full desired set, not a delta). project_id moves the ticket to another project (target project must exist — use create_project first if it doesn't). IMPORTANT: for work that produces no git branch/commit/PR (evaluation, investigation, docs-only tickets), VCS auto-link never fires, so completing the work does NOT transition the status by itself — call update_ticket(status=\"completed\") yourself. A \"comment\" documenting completion is not a status change. If the response has an `ignored_fields` array, those request fields were NOT applied (the server does not accept them on update, e.g. `type`) while the rest were; do not assume they took effect.",
     inputSchema: {
       id: z.string().describe("Ticket UUID"),
       status: z.string().optional().describe("New status"),
       title: z.string().optional(),
       title_name: z.string().optional(),
       description: z.string().optional(),
-      priority: z.string().optional(),
+      priority: z.enum(["urgent", "high", "normal", "low"]).optional().describe("New priority. Takes effect on goquest builds that include goquest#137; on older ones it is reported in ignored_fields."),
       domain: z.string().optional(),
       assignee_id: z.string().optional(),
       project_id: z.string().optional().describe("Move the ticket to a different project (target project UUID)"),
