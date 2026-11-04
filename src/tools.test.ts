@@ -478,3 +478,85 @@ test("decide_approval sends only decision/note/user_ref and surfaces the denial 
   const msg = mapError(403, JSON.stringify({ error: "decision denied: kind_not_delegable", reason: "kind_not_delegable" }));
   assert.match(msg, /reason: kind_not_delegable/);
 });
+
+import { mentionTools } from "./tools.ts";
+function mentionTool(name: string) {
+  const t = mentionTools.find((x) => x.name === name);
+  if (!t) throw new Error(`no tool ${name}`);
+  return t;
+}
+
+test("mentionTools: two tools, neither takes an actor argument", () => {
+  assert.deepEqual(mentionTools.map((t) => t.name).sort(), ["list_my_mentions", "mark_mentions_seen"]);
+  for (const t of mentionTools) {
+    for (const k of Object.keys(t.inputSchema)) {
+      assert.ok(!/actor|user|requester|as_/.test(k), `${t.name} must not take ${k}`);
+    }
+  }
+});
+
+test("list_my_mentions GETs the caller's own inbox with paging", async () => {
+  let seen = "";
+  const c = stubClient((m, p) => { seen = `${m} ${p}`; return { ok: true, status: 200, data: { mentions: [], unseen_count: 0 } }; });
+  await mentionTool("list_my_mentions").handler({ limit: 10, offset: 20 }, c);
+  assert.equal(seen, "GET /api/v1/users/mentions?limit=10&offset=20");
+  await mentionTool("list_my_mentions").handler({}, c);
+  assert.equal(seen, "GET /api/v1/users/mentions");
+});
+
+test("list_my_mentions unseen=true drops handled mentions and keeps the rest of the envelope", async () => {
+  const c = stubClient(() => ({
+    ok: true, status: 200,
+    data: { unseen_count: 1, limit: 20, offset: 0, mentions: [
+      { id: "m1", seen_at: "2026-11-04T00:00:00Z" },
+      { id: "m2", seen_at: null },
+      { id: "m3" },
+    ] },
+  }));
+  const r = await mentionTool("list_my_mentions").handler({ unseen: true }, c);
+  const out = JSON.parse(r.content[0].text);
+  assert.deepEqual(out.mentions.map((m: any) => m.id), ["m2", "m3"]);
+  assert.equal(out.unseen_count, 1);
+  assert.equal(out.limit, 20);
+  const all = await mentionTool("list_my_mentions").handler({}, c);
+  assert.equal(JSON.parse(all.content[0].text).mentions.length, 3);
+});
+
+test("list_my_mentions surfaces an API error as an error result", async () => {
+  const c = stubClient(() => ({ ok: false, status: 401, error: "Unauthorized" }));
+  const r = await mentionTool("list_my_mentions").handler({ unseen: true }, c);
+  assert.equal(r.isError, true);
+});
+
+test("mark_mentions_seen marks each id separately and reports per-id results", async () => {
+  const calls: string[] = [];
+  const c = stubClient((m, p) => {
+    calls.push(`${m} ${p}`);
+    if (p.includes("gone")) return { ok: false, status: 404, error: "Not found" };
+    if (p.includes("boom")) return { ok: false, status: 500, error: "goquest server error (500)" };
+    return { ok: true, status: 204 };
+  });
+  const r = await mentionTool("mark_mentions_seen").handler({ ids: ["a", "gone", "boom", "a"] }, c);
+  assert.deepEqual(calls, ["POST /api/v1/mentions/a/seen", "POST /api/v1/mentions/gone/seen", "POST /api/v1/mentions/boom/seen"]);
+  const out = JSON.parse(r.content[0].text);
+  assert.equal(out.marked, 1);
+  assert.equal(out.failed, 2);
+  assert.deepEqual(out.results.map((x: any) => x.result), ["ok", "not_found", "goquest server error (500)"]);
+  assert.notEqual(r.isError, true, "a partial success is not an error result");
+});
+
+test("mark_mentions_seen is an error only when nothing was marked, and caps ids and escapes them", async () => {
+  const allFail = stubClient(() => ({ ok: false, status: 404, error: "Not found" }));
+  assert.equal((await mentionTool("mark_mentions_seen").handler({ ids: ["x"] }, allFail)).isError, true);
+
+  let called = 0;
+  const c = stubClient(() => { called++; return { ok: true, status: 204 }; });
+  const tooMany = await mentionTool("mark_mentions_seen").handler({ ids: Array.from({ length: 51 }, (_, i) => `m${i}`) }, c);
+  assert.equal(tooMany.isError, true);
+  assert.equal(called, 0, "nothing is sent when the cap is exceeded");
+
+  let seen = "";
+  const c2 = stubClient((m, p) => { seen = p; return { ok: true, status: 204 }; });
+  await mentionTool("mark_mentions_seen").handler({ ids: ["a/../b?x=1"] }, c2);
+  assert.equal(seen, "/api/v1/mentions/a%2F..%2Fb%3Fx%3D1/seen");
+});
