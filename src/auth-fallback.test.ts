@@ -11,7 +11,7 @@ test("step 1: one safe JSON log per fallback with tool context", async () => {
   try {
     logAuthFallback("no_authorization", "/api/v1/tickets", "list_tickets");
     const entry = JSON.parse(lines[0]);
-    assert.deepEqual(Object.keys(entry).sort(), ["actor", "event", "path", "reason", "tool", "ts"]);
+    assert.deepEqual(Object.keys(entry).sort(), ["actor_unverified", "event", "path", "reason", "tool", "ts"]);
     assert.equal(entry.actor_unverified, "unknown");
     assert.equal(entry.event, "auth_fallback");
     assert.equal(entry.reason, "no_authorization");
