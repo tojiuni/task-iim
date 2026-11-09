@@ -1,3 +1,6 @@
+import { currentTool, logAuthFallback } from "./auth-fallback.ts";
+import { apiKeyFallbackAllowed } from "./auth-policy.ts";
+
 export type GqResult = {
   ok: boolean;
   status: number;
@@ -45,9 +48,18 @@ export function mapError(status: number, bodyText: string): string {
   }
 }
 
-export function createClient(opts: { baseUrl: string; apiKey: string; authorizationHeader?: string; fetchImpl?: typeof fetch }): GoquestClient {
+export function createClient(opts: { baseUrl: string; apiKey: string; authorizationHeader?: string; fetchImpl?: typeof fetch; allowApiKeyFallback?: boolean; onUnauthorized?: () => void }): GoquestClient {
   const base = opts.baseUrl.replace(/\/$/, "");
   const doFetch = opts.fetchImpl ?? fetch;
+  const allowFallback = opts.allowApiKeyFallback ?? apiKeyFallbackAllowed();
+  function fallback(reason: "jwt_401" | "no_authorization", path: string): boolean {
+    logAuthFallback(reason, path, currentTool.getStore(), !allowFallback);
+    return allowFallback;
+  }
+  function unauthorized(): GqResult {
+    opts.onUnauthorized?.();
+    return { ok: false, status: 401, error: "Authentication required" };
+  }
 
   // task-iim-jwt-only-auth: goquest's auth middleware chain runs X-API-Key
   // before JWT and short-circuits JWT parsing entirely once APIKeyMiddleware
@@ -72,6 +84,7 @@ export function createClient(opts: { baseUrl: string; apiKey: string; authorizat
   return {
     async request(method, path, body) {
       const authed = Boolean(opts.authorizationHeader);
+      if (!authed && !fallback("no_authorization", path)) return unauthorized();
       let res: Response;
       try {
         res = await attempt(method, path, body, !authed);
@@ -79,19 +92,9 @@ export function createClient(opts: { baseUrl: string; apiKey: string; authorizat
         return { ok: false, status: 0, error: `network error contacting ${base}: ${String(err)}` };
       }
 
-      // goq-mcp-jwt-expiry-fallback: the MCP client (Claude Code) reads the
-      // Authorization header from .mcp.json once per connection and caches
-      // it for the session's lifetime — it does NOT pick up tokenhub-
-      // refresher's periodic re-writes without a manual `/mcp` reconnect. A
-      // JWT that goes stale mid-session would otherwise hard-fail every
-      // goquest MCP call with 401 until the user notices and reconnects
-      // (goquest-ui avoids this via an axios 401-retry interceptor that
-      // refreshes the token; MCP has no equivalent refresh flow). Retry once
-      // with the static X-API-Key so the tool call still succeeds — at the
-      // cost of falling back to a less precise identity for that one call —
-      // rather than surfacing a hard failure for a problem the caller can't
-      // self-heal mid-request.
-      if (authed && res.status === 401 && opts.apiKey) {
+      // Step 1 observes fallback; step 2 gates it before retrying.
+      if (authed && res.status === 401 && (opts.apiKey || !allowFallback)) {
+        if (!fallback("jwt_401", path)) return unauthorized();
         try {
           res = await attempt(method, path, body, true);
         } catch (err) {
