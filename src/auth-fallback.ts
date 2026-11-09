@@ -28,7 +28,7 @@ export function logAuthFallback(
 ): void {
   process.stderr.write(JSON.stringify({
     event: blocked ? "auth_fallback_blocked" : "auth_fallback",
-    actor: fallbackActor(authorizationHeader),
+    actor_unverified: fallbackActor(authorizationHeader),
     reason, tool, path: path.split(/[?#]/, 1)[0], ts: new Date().toISOString(),
   }) + "\n");
 }

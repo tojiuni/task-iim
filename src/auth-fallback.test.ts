@@ -12,7 +12,7 @@ test("step 1: one safe JSON log per fallback with tool context", async () => {
     logAuthFallback("no_authorization", "/api/v1/tickets", "list_tickets");
     const entry = JSON.parse(lines[0]);
     assert.deepEqual(Object.keys(entry).sort(), ["actor", "event", "path", "reason", "tool", "ts"]);
-    assert.equal(entry.actor, "unknown");
+    assert.equal(entry.actor_unverified, "unknown");
     assert.equal(entry.event, "auth_fallback");
     assert.equal(entry.reason, "no_authorization");
     assert.equal(new Date(entry.ts).toISOString(), entry.ts);
@@ -135,7 +135,7 @@ test("fallback and blocked logs contain actor but no token or other claims", asy
     assert.equal(lines.length, 2);
     assert.deepEqual(lines.map(line => JSON.parse(line).event), ["auth_fallback", "auth_fallback_blocked"]);
     for (const line of lines) {
-      assert.equal(JSON.parse(line).actor, "actor-123");
+      assert.equal(JSON.parse(line).actor_unverified, "actor-123");
       assert.ok(!line.includes(authorizationHeader));
       assert.ok(!line.includes(authorizationHeader.slice(7)));
       assert.doesNotMatch(line, /PRIVATE_|Authorization|Bearer|signature|email|role/);
@@ -144,6 +144,6 @@ test("fallback and blocked logs contain actor but no token or other claims", asy
     logAuthFallback("no_authorization", "/mcp", undefined, true);
     logAuthFallback("jwt_401", "/api/v1/tickets", undefined, false, "Bearer malformed");
     logAuthFallback("jwt_401", "/api/v1/tickets", undefined, true, observationJwt({ sub: "z".repeat(256) }));
-    assert.deepEqual(lines.map(line => JSON.parse(line).actor), ["unknown", "unknown", "z".repeat(128)]);
+    assert.deepEqual(lines.map(line => JSON.parse(line).actor_unverified), ["unknown", "unknown", "z".repeat(128)]);
   } finally { process.stderr.write = original; }
 });
