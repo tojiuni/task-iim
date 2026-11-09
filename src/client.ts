@@ -53,7 +53,7 @@ export function createClient(opts: { baseUrl: string; apiKey: string; authorizat
   const doFetch = opts.fetchImpl ?? fetch;
   const allowFallback = opts.allowApiKeyFallback ?? apiKeyFallbackAllowed();
   function fallback(reason: "jwt_401" | "no_authorization", path: string): boolean {
-    logAuthFallback(reason, path, currentTool.getStore(), !allowFallback);
+    logAuthFallback(reason, path, currentTool.getStore(), !allowFallback, opts.authorizationHeader);
     return allowFallback;
   }
   function unauthorized(): GqResult {

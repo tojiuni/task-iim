@@ -47,6 +47,9 @@ for (const allowApiKeyFallback of [false, true]) {
       await finished;
       assert.equal(res.statusCode, allowApiKeyFallback ? 200 : 401, output);
       if (!allowApiKeyFallback) {
+        assert.match(output, authorization
+          ? /www-authenticate: Bearer error="invalid_token"\r\n/i
+          : /www-authenticate: Bearer\r\n/i);
         assert.match(output, /Authentication required/);
         assert.doesNotMatch(output, /"result"/);
       }
@@ -58,3 +61,35 @@ for (const allowApiKeyFallback of [false, true]) {
     });
   }
 }
+
+test("stdio retains static API-key auth with HTTP fallback disabled or unset", async () => {
+  const { createStdioClient } = await import("./task-mcp-server.ts");
+  const originalEnv = process.env["ALLOW_APIKEY_FALLBACK"];
+  const originalWrite = process.stderr.write;
+  const lines: string[] = [];
+  process.stderr.write = ((line: string) => { lines.push(line); return true; }) as typeof originalWrite;
+  try {
+    for (const value of [undefined, "0"]) {
+      if (value === undefined) delete process.env["ALLOW_APIKEY_FALLBACK"];
+      else process.env["ALLOW_APIKEY_FALLBACK"] = value;
+      let calls = 0;
+      const client = createStdioClient({
+        baseUrl: "http://gq", apiKey: "STDIO_SECRET",
+        fetchImpl: (async (_url, init) => {
+          calls++;
+          assert.equal(new Headers(init?.headers).get("X-API-Key"), "STDIO_SECRET");
+          return new Response('{"id":"t1"}');
+        }) as typeof fetch,
+      });
+      assert.equal((await client.request("GET", "/api/v1/tickets/t1")).ok, true);
+      assert.equal(calls, 1);
+    }
+    assert.equal(lines.length, 2);
+    assert.ok(lines.every(line => JSON.parse(line).event === "auth_fallback"));
+    assert.doesNotMatch(lines.join(""), /STDIO_SECRET|auth_fallback_blocked/);
+  } finally {
+    process.stderr.write = originalWrite;
+    if (originalEnv === undefined) delete process.env["ALLOW_APIKEY_FALLBACK"];
+    else process.env["ALLOW_APIKEY_FALLBACK"] = originalEnv;
+  }
+});

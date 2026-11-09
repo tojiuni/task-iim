@@ -18,7 +18,7 @@ service-interface naming convention (`neunexus/reference/iim-convention.md`).
 ## Config
 - `GOQUEST_API_URL` (default in-cluster goquest-service)
 - `GOQUEST_API_KEY` (from Vault `secret/neunexus/workspace/goquest#api_key`)
-- `ALLOW_APIKEY_FALLBACK` (default off; only `1` enables the shared service identity)
+- `ALLOW_APIKEY_FALLBACK` (HTTP only, default off; `1` or `true`, trimmed and case-insensitive, enables the shared service identity)
 - `MCP_HTTP_PORT` (set → StreamableHTTP; unset → stdio)
 
 HTTP requests require Authorization. A goquest JWT 401 is returned as HTTP 401 so
@@ -29,19 +29,19 @@ Fallbacks emit one JSON stderr line (`auth_fallback` or `auth_fallback_blocked`)
 with reason, path, timestamp, and tool name when available; credentials are omitted.
 HTTP tool responses use JSON so headers are deferred until completion. Once an SSE
 stream has started, its HTTP status cannot be changed; tools/call avoids that limitation
-by using JSON responses. Stdio has no HTTP status; API calls without a session token
-require the same opt-in and otherwise return an authentication tool error.
+by using JSON responses. Stdio keeps using `GOQUEST_API_KEY` without requiring
+`ALLOW_APIKEY_FALLBACK`; this flag gates only HTTP authentication fallback.
 
 ## Run
 ```bash
 npm install
-ALLOW_APIKEY_FALLBACK=1 GOQUEST_API_KEY=... npm start        # stdio
+GOQUEST_API_KEY=... npm start        # stdio
 GOQUEST_API_KEY=... MCP_HTTP_PORT=8080 npm start   # HTTP
 ```
 
 ## Register (~/.mcp.json)
 ```json
-{ "mcpServers": { "task": { "command": "npx", "args": ["tsx", "src/task-mcp-server.ts"], "env": { "GOQUEST_API_KEY": "...", "ALLOW_APIKEY_FALLBACK": "1" } } } }
+{ "mcpServers": { "task": { "command": "npx", "args": ["tsx", "src/task-mcp-server.ts"], "env": { "GOQUEST_API_KEY": "..." } } } }
 ```
 
 ## Guide sync

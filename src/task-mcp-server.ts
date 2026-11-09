@@ -36,10 +36,18 @@ async function main() {
   if (httpPort) {
     createServer(createHttpHandler()).listen(httpPort, () => process.stderr.write(`task-iim HTTP listening on :${httpPort}\n`));
   } else {
-    const client = createClient({ baseUrl: BASE_URL, apiKey: API_KEY });
+    const client = createStdioClient();
     const server = buildServer(client);
     await server.connect(new StdioServerTransport());
   }
+}
+
+// Stdio has no session identity to fall back from; retain its static-key auth.
+export function createStdioClient(options: { baseUrl?: string; apiKey?: string; fetchImpl?: typeof fetch } = {}): GoquestClient {
+  return createClient({
+    baseUrl: options.baseUrl ?? BASE_URL, apiKey: options.apiKey ?? API_KEY,
+    fetchImpl: options.fetchImpl, allowApiKeyFallback: true,
+  });
 }
 
 export function createHttpHandler(options: { baseUrl?: string; apiKey?: string; allowApiKeyFallback?: boolean; fetchImpl?: typeof fetch } = {}): import("node:http").RequestListener {
@@ -62,7 +70,7 @@ export function createHttpHandler(options: { baseUrl?: string; apiKey?: string; 
     const allowApiKeyFallback = options.allowApiKeyFallback ?? apiKeyFallbackAllowed();
     if (!authHeader && !allowApiKeyFallback) {
       logAuthFallback("no_authorization", req.url ?? "/mcp", undefined, true);
-      res.writeHead(401, { "content-type": "application/json" }).end(
+      res.writeHead(401, { "content-type": "application/json", "WWW-Authenticate": "Bearer" }).end(
         JSON.stringify({ jsonrpc: "2.0", error: { code: -32001, message: "Authentication required" }, id: null }),
       );
       return;
@@ -72,14 +80,21 @@ export function createHttpHandler(options: { baseUrl?: string; apiKey?: string; 
     // authentication failure at the HTTP boundary, before any bytes are sent.
     const writeHead = res.writeHead;
     res.writeHead = function (this: typeof res, ...args: Parameters<typeof writeHead>) {
-      if (unauthorized) args[0] = 401;
+      if (unauthorized) {
+        args[0] = 401;
+        this.setHeader("WWW-Authenticate", 'Bearer error="invalid_token"');
+      }
       return writeHead.apply(this, args);
     } as typeof writeHead;
     const client = createClient({
       baseUrl: options.baseUrl ?? BASE_URL, apiKey: options.apiKey ?? API_KEY,
       authorizationHeader: authHeader, allowApiKeyFallback,
       fetchImpl: options.fetchImpl,
-      onUnauthorized: () => { unauthorized = true; },
+      onUnauthorized: () => {
+        // A batch with mixed outcomes returns 401 for the whole request.
+        // Claude Code sends single calls.
+        unauthorized = true;
+      },
     });
     const server = buildServer(client);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
