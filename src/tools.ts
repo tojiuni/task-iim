@@ -230,7 +230,7 @@ export const writeTools: ToolDef[] = [
   {
     name: "create_ticket",
     description:
-      "Create a ticket. Idempotent: a duplicate title_name in the same project returns the existing ticket (result includes \"replayed\": true). Prefer name-based fields (workspace/project/tag_names) over UUIDs. title_name must match ^[a-z][a-z0-9]*(-[a-z0-9]+)+$ (lowercase, >=1 hyphen). ALWAYS link the source design/plan/spec doc(s) via ref_ids (e.g. geneso:whoami/spec/foo.md); for sub-tickets, inherit the parent's ref_ids. As a safety net, any \"geneso:<path>\" token mentioned inline in description is also auto-extracted and merged into ref_ids (deduplicated) — but still pass ref_ids explicitly rather than relying on this, since it only catches the exact \"geneso:\" prefix form. Call ticket_guide for full conventions. Name your git branch with the title_name (e.g. goq-foo or feature/goq-foo) and put the title_name in PR titles/commit messages — goquest then auto-links branches/commits/PRs to this ticket and advances its status.",
+      "Create a ticket. Requester is always the calling account, derived server-side by goquest from the token and cannot be client-set. assignee_type=agent triggers goquest's assigned notification. Idempotent: a duplicate title_name in the same project returns the existing ticket (result includes \"replayed\": true). Prefer name-based fields (workspace/project/tag_names) over UUIDs. title_name must match ^[a-z][a-z0-9]*(-[a-z0-9]+)+$ (lowercase, >=1 hyphen). ALWAYS link the source design/plan/spec doc(s) via ref_ids (e.g. geneso:whoami/spec/foo.md); for sub-tickets, inherit the parent's ref_ids. As a safety net, any \"geneso:<path>\" token mentioned inline in description is also auto-extracted and merged into ref_ids (deduplicated) — but still pass ref_ids explicitly rather than relying on this, since it only catches the exact \"geneso:\" prefix form. Call ticket_guide for full conventions. Name your git branch with the title_name (e.g. goq-foo or feature/goq-foo) and put the title_name in PR titles/commit messages — goquest then auto-links branches/commits/PRs to this ticket and advances its status.",
     inputSchema: {
       title: z.string().describe("Human-readable title (required)"),
       title_name: z.string().optional().describe("Stable handle, e.g. goq-vault-portforward (lowercase, >=1 hyphen)"),
@@ -242,6 +242,8 @@ export const writeTools: ToolDef[] = [
       type: z.enum(["task", "bug", "feature", "incident", "request"]).optional(),
       priority: z.enum(["urgent", "high", "normal", "low"]).optional(),
       domain: z.enum(["infra", "data", "code", "monitor", "knowledge", "pm"]).optional(),
+      assignee_id: z.string().optional().describe("Assignee actor ID (required when assignee_type is provided)"),
+      assignee_type: z.enum(["human", "agent", "org"]).optional().describe("Assignee account type; agent triggers goquest's assigned notification."),
       parent_id: z.string().optional().describe("Parent ticket UUID for sub-tickets"),
       ref_ids: z
         .array(z.string())
@@ -252,6 +254,9 @@ export const writeTools: ToolDef[] = [
       due_at: z.string().optional().describe("ISO8601 due date, e.g. \"2026-08-15T00:00:00Z\"."),
     },
     handler: async (a, client) => {
+      if (a.assignee_type !== undefined && !a.assignee_id) {
+        return textResult("assignee_id is required when assignee_type is provided.", true);
+      }
       const body: Record<string, unknown> = { title: a.title };
       if (a.title_name) body.title_name = a.title_name;
       if (a.workspace) body.workspace_name = a.workspace;
@@ -268,6 +273,8 @@ export const writeTools: ToolDef[] = [
       if (a.due_at) body.due_at = a.due_at;
       const refIds = mergeRefIds(a.ref_ids, a.description);
       if (refIds) body.ref_ids = refIds;
+      if (a.assignee_id !== undefined) body.assignee_id = a.assignee_id;
+      if (a.assignee_type !== undefined) body.assignee_type = a.assignee_type;
       const r = await client.request("POST", "/api/v1/tickets", body);
       if (!r.ok) return textResult(r.error ?? `HTTP ${r.status}`, true);
       return textResult({ replayed: r.replayed ?? false, ticket: r.data });
@@ -276,7 +283,7 @@ export const writeTools: ToolDef[] = [
   {
     name: "update_ticket",
     description:
-      "Update a ticket by UUID. Supports status transitions (pending→assigned→in_progress→completed; pending→in_progress is rejected — go via assigned). completed/cancelled are terminal — status here can NEVER move a ticket out of them (always rejected, by design); use reopen_ticket instead. ref_ids REPLACES the ticket's linked docs (send the full desired set, not a delta). project_id moves the ticket to another project (target project must exist — use create_project first if it doesn't). IMPORTANT: for work that produces no git branch/commit/PR (evaluation, investigation, docs-only tickets), VCS auto-link never fires, so completing the work does NOT transition the status by itself — call update_ticket(status=\"completed\") yourself. A \"comment\" documenting completion is not a status change. If the response has an `ignored_fields` array, those request fields were NOT applied (the server does not accept them on update, e.g. `type`) while the rest were; do not assume they took effect.",
+      "Update a ticket by UUID. Requester is always the calling account, derived server-side by goquest from the token and cannot be client-set. assignee_type=agent triggers goquest's assigned notification. Supports status transitions (pending→assigned→in_progress→completed; pending→in_progress is rejected — go via assigned). completed/cancelled are terminal — status here can NEVER move a ticket out of them (always rejected, by design); use reopen_ticket instead. ref_ids REPLACES the ticket's linked docs (send the full desired set, not a delta). project_id moves the ticket to another project (target project must exist — use create_project first if it doesn't). IMPORTANT: for work that produces no git branch/commit/PR (evaluation, investigation, docs-only tickets), VCS auto-link never fires, so completing the work does NOT transition the status by itself — call update_ticket(status=\"completed\") yourself. A \"comment\" documenting completion is not a status change. If the response has an `ignored_fields` array, those request fields were NOT applied (the server does not accept them on update, e.g. `type`) while the rest were; do not assume they took effect.",
     inputSchema: {
       id: z.string().describe("Ticket UUID"),
       status: z.string().optional().describe("New status"),
@@ -286,6 +293,7 @@ export const writeTools: ToolDef[] = [
       priority: z.enum(["urgent", "high", "normal", "low"]).optional().describe("New priority. Takes effect on goquest builds that include goquest#137; on older ones it is reported in ignored_fields."),
       domain: z.string().optional(),
       assignee_id: z.string().optional(),
+      assignee_type: z.enum(["human", "agent", "org"]).optional().describe("Assignee account type; agent triggers goquest's assigned notification."),
       project_id: z.string().optional().describe("Move the ticket to a different project (target project UUID)"),
       ref_ids: z
         .array(z.string())
