@@ -630,7 +630,7 @@ test("assignment schemas accept only human and agent and leave requester server-
     assert.equal(schema.safeParse({ ...base, assignee_id: 123 }).success, false);
     assert.equal("requester_id" in wByName(name).inputSchema, false);
     assert.match(wByName(name).description, /Requester is always the calling account/);
-    assert.match(wByName(name).description, /assignee_type=agent.*assigned notification on a best-effort basis/);
+    assert.match(wByName(name).description, /Each time assignee_type=agent.*assigned notification on a best-effort basis, even if the assignee is unchanged; do not resend the same assignment repeatedly/);
   }
 });
 
