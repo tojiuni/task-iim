@@ -17,8 +17,10 @@ task-iim 도구로 티켓을 만들 때 따르는 규약. 정본은 이 문서�
 - goquest가 토큰에서 서버 측으로 결정하며 클라이언트가 지정할 수 없다.
 - 담당자(assignee)는 실제 작업을 수행하는 역할 계정이다.
 - 에이전트 역할 계정은 `assignee_type=agent`, `assignee_id=<actor id>`로 지정한다.
-- `assignee_type`을 지정하면 `assignee_id`도 반드시 함께 보낸다.
-- `assignee_type=agent`는 goquest의 assigned 알림을 발생시킨다.
+- 지원하는 담당자 유형은 `human|agent`이며, 이 도구를 통한 조직(org) 배정은 지원하지 않는다.
+- 생성 시 `assignee_type`을 지정하면 `assignee_id`도 필수이며, ID만 보내면 goquest 기본값인 `human`으로 배정된다.
+- 수정 시 `assignee_type`만 보내면 기존 담당자의 유형을 변경한다.
+- 요청에 `assignee_type=agent`가 있으면 assigned 알림을 최선형(best-effort)으로 전송하며, 수정 시 담당자가 같아도 전송한다.
 - 사람이 작업을 위임했다면 티켓 설명의 첫 줄에 `delegated_by: <name>`을 적는다.
 
 ## 관련 문서 링크 (ref_ids) — 필수

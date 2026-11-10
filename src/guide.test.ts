@@ -22,6 +22,10 @@ test("guide explains requester, assignee and human delegation in 6–10 Korean l
   assert.match(section, /담당자\(assignee\).*역할 계정/);
   assert.match(section, /assignee_type=agent/);
   assert.match(section, /assignee_id=<actor id>/);
+  assert.match(section, /human\|agent.*조직\(org\).*지원하지 않는다/);
+  assert.match(section, /생성 시.*ID만 보내면.*기본값인 `human`/);
+  assert.match(section, /수정 시.*assignee_type.*기존 담당자의 유형/);
+  assert.match(section, /best-effort.*수정 시 담당자가 같아도/);
   assert.match(section, /첫 줄.*delegated_by: <name>/);
   const r = await guideTools[0].handler({}, { async request() { return { ok: true, status: 200 }; } });
   assert.equal(r.content[0].text, GUIDE_TEXT);

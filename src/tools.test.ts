@@ -593,7 +593,7 @@ test("create_ticket preserves the serialized body without assignee and never sen
 test("create_ticket sends provided assignee fields, including an ID without a type", async () => {
   for (const assignment of [
     { assignee_id: "actor-1" },
-    ...["human", "agent", "org"].map((assignee_type) => ({ assignee_id: "actor-1", assignee_type })),
+    ...["human", "agent"].map((assignee_type) => ({ assignee_id: "actor-1", assignee_type })),
   ]) {
     let body: unknown;
     const c = stubClient((m, p, b) => {
@@ -609,7 +609,7 @@ test("create_ticket sends provided assignee fields, including an ID without a ty
 
 test("create_ticket rejects every assignee_type without a nonempty assignee_id locally", async () => {
   const c = stubClient(() => { assert.fail("must not contact goquest"); });
-  for (const assignee_type of ["human", "agent", "org"]) {
+  for (const assignee_type of ["human", "agent"]) {
     for (const assignee_id of [undefined, ""]) {
       const r = await wByName("create_ticket").handler({ title: "Work", assignee_type, assignee_id }, c);
       assert.equal(r.isError, true);
@@ -618,23 +618,24 @@ test("create_ticket rejects every assignee_type without a nonempty assignee_id l
   }
 });
 
-test("assignment schemas accept only human, agent, org and leave requester server-derived", () => {
+test("assignment schemas accept only human and agent and leave requester server-derived", () => {
   for (const name of ["create_ticket", "update_ticket"]) {
     const schema = z.object(wByName(name).inputSchema);
     const base = name === "create_ticket" ? { title: "Work" } : { id: "t1" };
-    for (const assignee_type of ["human", "agent", "org"]) {
+    for (const assignee_type of ["human", "agent"]) {
       assert.equal(schema.safeParse({ ...base, assignee_type, assignee_id: "actor-1" }).success, true);
     }
+    assert.equal(schema.safeParse({ ...base, assignee_type: "org", assignee_id: "actor-1" }).success, false);
     assert.equal(schema.safeParse({ ...base, assignee_type: "robot" }).success, false);
     assert.equal(schema.safeParse({ ...base, assignee_id: 123 }).success, false);
     assert.equal("requester_id" in wByName(name).inputSchema, false);
     assert.match(wByName(name).description, /Requester is always the calling account/);
-    assert.match(wByName(name).description, /assignee_type=agent triggers goquest's assigned notification/);
+    assert.match(wByName(name).description, /assignee_type=agent.*assigned notification on a best-effort basis/);
   }
 });
 
 test("update_ticket passes assignee_type through and preserves ignored_fields for other fields", async () => {
-  for (const assignee_type of ["human", "agent", "org"]) {
+  for (const assignee_type of ["human", "agent"]) {
     const c = stubClient((m, p, body) => {
       assert.equal(m, "PATCH");
       assert.equal(p, "/api/v1/tickets/t1");
@@ -652,4 +653,12 @@ test("update_ticket omits assignee_type when not provided", async () => {
     return { ok: true, status: 200 };
   });
   await wByName("update_ticket").handler({ id: "t1", assignee_id: "actor-1", assignee_type: undefined }, c);
+});
+
+test("update_ticket sends assignee_type alone for the existing assignee", async () => {
+  const c = stubClient((_m, _p, body) => {
+    assert.deepEqual(body, { assignee_type: "agent" });
+    return { ok: true, status: 200 };
+  });
+  await wByName("update_ticket").handler({ id: "t1", assignee_type: "agent" }, c);
 });
