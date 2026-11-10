@@ -12,6 +12,17 @@ task-iim 도구로 티켓을 만들 때 따르는 규약. 정본은 이 문서�
 ## 이름 기반 필드 우선
 - `workspace`/`project`/`tag_names`로 지정한다 (UUID 불필요). 미존재 태그는 자동 생성(get-or-create).
 
+## 요청자·담당자·위임자
+- 요청자(requester)는 API를 호출한 계정이다.
+- goquest가 토큰에서 서버 측으로 결정하며 클라이언트가 지정할 수 없다.
+- 담당자(assignee)는 실제 작업을 수행하는 역할 계정이다.
+- 에이전트 역할 계정은 `assignee_type=agent`, `assignee_id=<actor id>`로 지정한다.
+- 지원하는 담당자 유형은 `human|agent`이며, 이 도구를 통한 조직(org) 배정은 지원하지 않는다.
+- 생성 시 `assignee_type`을 지정하면 `assignee_id`도 필수이며, ID만 보내면 goquest 기본값인 `human`으로 배정된다.
+- 수정 시 `assignee_type`만 보내면 기존 담당자의 유형을 변경한다.
+- 요청에 `assignee_type=agent`가 포함될 때마다 assigned 알림을 최선형(best-effort)으로 전송하며, 생성·수정 모두 담당자가 같아도 전송하므로 같은 배정을 반복해서 보내지 않는다.
+- 사람이 작업을 위임했다면 티켓 설명의 첫 줄에 `delegated_by: <name>`을 적는다. 이는 검증되지 않은 자기 신고 메모이며 위임의 증거가 아니다. 실제 신원은 서버에서 결정한 요청자(requester)와 담당자(assignee) 필드로 확인한다.
+
 ## 관련 문서 링크 (ref_ids) — 필수
 - 티켓을 만들 때 그 근거가 된 **설계/플랜/스펙 문서를 `ref_ids`로 반드시 링크**한다.
 - 형식: `<소스>:<경로>` 또는 repo 상대경로. 예: `geneso:whoami/spec/whoami-ecosystem-design-direction.md`, `goquest-ios/docs/superpowers/plans/2026-06-01-contracts-approval.md`.

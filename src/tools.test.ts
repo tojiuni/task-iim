@@ -579,3 +579,86 @@ test("update_ticket passes goquest's ignored_fields through so the agent can see
   assert.equal(JSON.parse(r.content[0].text).ignored_fields[0], "type");
   assert.match(wByName("update_ticket").description, /ignored_fields/);
 });
+
+test("create_ticket preserves the serialized body without assignee and never sends requester", async () => {
+  let body: unknown;
+  const c = stubClient((_m, _p, b) => { body = b; return { ok: true, status: 201 }; });
+  await wByName("create_ticket").handler({
+    title: "Do X", title_name: "goq-do-x", workspace: "toji", project: "goquest",
+    description: "Work", ref_ids: ["geneso:spec/x.md"], requester_id: "spoofed",
+  }, c);
+  assert.equal(JSON.stringify(body), '{"title":"Do X","title_name":"goq-do-x","workspace_name":"toji","project_name":"goquest","description":"Work","ref_ids":["geneso:spec/x.md"]}');
+});
+
+test("create_ticket sends provided assignee fields, including an ID without a type", async () => {
+  for (const assignment of [
+    { assignee_id: "actor-1" },
+    ...["human", "agent"].map((assignee_type) => ({ assignee_id: "actor-1", assignee_type })),
+  ]) {
+    let body: unknown;
+    const c = stubClient((m, p, b) => {
+      assert.equal(m, "POST");
+      assert.equal(p, "/api/v1/tickets");
+      body = b;
+      return { ok: true, status: 201 };
+    });
+    await wByName("create_ticket").handler({ title: "Work", ...assignment }, c);
+    assert.deepEqual(body, { title: "Work", ...assignment });
+  }
+});
+
+test("create_ticket rejects every assignee_type without a nonempty assignee_id locally", async () => {
+  const c = stubClient(() => { assert.fail("must not contact goquest"); });
+  for (const assignee_type of ["human", "agent"]) {
+    for (const assignee_id of [undefined, ""]) {
+      const r = await wByName("create_ticket").handler({ title: "Work", assignee_type, assignee_id }, c);
+      assert.equal(r.isError, true);
+      assert.match(r.content[0].text, /assignee_id is required when assignee_type/);
+    }
+  }
+});
+
+test("assignment schemas accept only human and agent and leave requester server-derived", () => {
+  for (const name of ["create_ticket", "update_ticket"]) {
+    const schema = z.object(wByName(name).inputSchema);
+    const base = name === "create_ticket" ? { title: "Work" } : { id: "t1" };
+    for (const assignee_type of ["human", "agent"]) {
+      assert.equal(schema.safeParse({ ...base, assignee_type, assignee_id: "actor-1" }).success, true);
+    }
+    assert.equal(schema.safeParse({ ...base, assignee_type: "org", assignee_id: "actor-1" }).success, false);
+    assert.equal(schema.safeParse({ ...base, assignee_type: "robot" }).success, false);
+    assert.equal(schema.safeParse({ ...base, assignee_id: 123 }).success, false);
+    assert.equal("requester_id" in wByName(name).inputSchema, false);
+    assert.match(wByName(name).description, /Requester is always the calling account/);
+    assert.match(wByName(name).description, /Each time assignee_type=agent.*assigned notification on a best-effort basis, even if the assignee is unchanged; do not resend the same assignment repeatedly/);
+  }
+});
+
+test("update_ticket passes assignee_type through and preserves ignored_fields for other fields", async () => {
+  for (const assignee_type of ["human", "agent"]) {
+    const c = stubClient((m, p, body) => {
+      assert.equal(m, "PATCH");
+      assert.equal(p, "/api/v1/tickets/t1");
+      assert.deepEqual(body, { assignee_id: "actor-1", assignee_type, type: "task" });
+      return { ok: true, status: 200, data: { ignored_fields: ["type"] } };
+    });
+    const r = await wByName("update_ticket").handler({ id: "t1", assignee_id: "actor-1", assignee_type, type: "task" }, c);
+    assert.deepEqual(JSON.parse(r.content[0].text).ignored_fields, ["type"]);
+  }
+});
+
+test("update_ticket omits assignee_type when not provided", async () => {
+  const c = stubClient((_m, _p, body) => {
+    assert.equal(JSON.stringify(body), '{"assignee_id":"actor-1"}');
+    return { ok: true, status: 200 };
+  });
+  await wByName("update_ticket").handler({ id: "t1", assignee_id: "actor-1", assignee_type: undefined }, c);
+});
+
+test("update_ticket sends assignee_type alone for the existing assignee", async () => {
+  const c = stubClient((_m, _p, body) => {
+    assert.deepEqual(body, { assignee_type: "agent" });
+    return { ok: true, status: 200 };
+  });
+  await wByName("update_ticket").handler({ id: "t1", assignee_type: "agent" }, c);
+});
