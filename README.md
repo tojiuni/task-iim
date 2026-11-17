@@ -18,7 +18,27 @@ service-interface naming convention (`neunexus/reference/iim-convention.md`).
 ## Config
 - `GOQUEST_API_URL` (default in-cluster goquest-service)
 - `GOQUEST_API_KEY` (from Vault `secret/neunexus/workspace/goquest#api_key`)
+- `ALLOW_APIKEY_FALLBACK` (HTTP only, default off; `1` or `true`, trimmed and case-insensitive, enables the shared service identity)
+- `ALLOW_APIKEY_JWT_RETRY` (HTTP only, default off; same parsing as `ALLOW_APIKEY_FALLBACK`; retry requires both flags)
 - `MCP_HTTP_PORT` (set → StreamableHTTP; unset → stdio)
+
+HTTP requests require Authorization. A goquest JWT 401 is returned as HTTP 401 so
+the client can refresh its headers and retry. Missing Authorization also returns 401.
+API-key use records work under the shared service identity. The flags are independent:
+
+| ALLOW_APIKEY_FALLBACK | ALLOW_APIKEY_JWT_RETRY | No Authorization | JWT 401 |
+| --- | --- | --- | --- |
+| on | off (default) | API key, auth_fallback | HTTP 401, auth_fallback_blocked |
+| on | on | API key, auth_fallback | One API-key retry, auth_fallback |
+| off (default) | either | HTTP 401, auth_fallback_blocked | HTTP 401, auth_fallback_blocked |
+
+JWT-401 logs use reason `jwt_401`; retries require a configured API key.
+Fallbacks emit one JSON stderr line (`auth_fallback` or `auth_fallback_blocked`)
+with reason, path, timestamp, and tool name when available; credentials are omitted.
+HTTP tool responses use JSON so headers are deferred until completion. Once an SSE
+stream has started, its HTTP status cannot be changed; tools/call avoids that limitation
+by using JSON responses. Stdio keeps using `GOQUEST_API_KEY` without requiring
+`ALLOW_APIKEY_FALLBACK`; this flag gates only HTTP authentication fallback.
 
 ## Run
 ```bash
