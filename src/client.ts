@@ -1,5 +1,5 @@
 import { currentTool, logAuthFallback } from "./auth-fallback.ts";
-import { apiKeyFallbackAllowed } from "./auth-policy.ts";
+import { apiKeyFallbackAllowed, apiKeyJwtRetryAllowed } from "./auth-policy.ts";
 
 export type GqResult = {
   ok: boolean;
@@ -48,13 +48,14 @@ export function mapError(status: number, bodyText: string): string {
   }
 }
 
-export function createClient(opts: { baseUrl: string; apiKey: string; authorizationHeader?: string; fetchImpl?: typeof fetch; allowApiKeyFallback?: boolean; onUnauthorized?: () => void }): GoquestClient {
+export function createClient(opts: { baseUrl: string; apiKey: string; authorizationHeader?: string; fetchImpl?: typeof fetch; allowApiKeyFallback?: boolean; allowJwtRetry?: boolean; onUnauthorized?: () => void }): GoquestClient {
   const base = opts.baseUrl.replace(/\/$/, "");
   const doFetch = opts.fetchImpl ?? fetch;
   const allowFallback = opts.allowApiKeyFallback ?? apiKeyFallbackAllowed();
-  function fallback(reason: "jwt_401" | "no_authorization", path: string): boolean {
-    logAuthFallback(reason, path, currentTool.getStore(), !allowFallback, opts.authorizationHeader);
-    return allowFallback;
+  const allowJwtRetry = opts.allowJwtRetry ?? apiKeyJwtRetryAllowed();
+  function fallback(reason: "jwt_401" | "no_authorization", path: string, allowed = allowFallback): boolean {
+    logAuthFallback(reason, path, currentTool.getStore(), !allowed, opts.authorizationHeader);
+    return allowed;
   }
   function unauthorized(): GqResult {
     opts.onUnauthorized?.();
@@ -92,9 +93,9 @@ export function createClient(opts: { baseUrl: string; apiKey: string; authorizat
         return { ok: false, status: 0, error: `network error contacting ${base}: ${String(err)}` };
       }
 
-      // Step 1 observes fallback; step 2 gates it before retrying.
-      if (authed && res.status === 401 && (opts.apiKey || !allowFallback)) {
-        if (!fallback("jwt_401", path)) return unauthorized();
+      // JWT retries require both opt-ins and a configured API key.
+      if (authed && res.status === 401) {
+        if (!fallback("jwt_401", path, allowFallback && allowJwtRetry && Boolean(opts.apiKey))) return unauthorized();
         try {
           res = await attempt(method, path, body, true);
         } catch (err) {

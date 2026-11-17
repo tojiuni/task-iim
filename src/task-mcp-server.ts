@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { currentTool, logAuthFallback } from "./auth-fallback.ts";
-import { apiKeyFallbackAllowed } from "./auth-policy.ts";
+import { apiKeyFallbackAllowed, apiKeyJwtRetryAllowed } from "./auth-policy.ts";
 import { createServer } from "node:http";
 import { realpathSync } from "node:fs";
 import { createClient, type GoquestClient } from "./client.ts";
@@ -50,7 +50,7 @@ export function createStdioClient(options: { baseUrl?: string; apiKey?: string; 
   });
 }
 
-export function createHttpHandler(options: { baseUrl?: string; apiKey?: string; allowApiKeyFallback?: boolean; fetchImpl?: typeof fetch } = {}): import("node:http").RequestListener {
+export function createHttpHandler(options: { baseUrl?: string; apiKey?: string; allowApiKeyFallback?: boolean; allowJwtRetry?: boolean; fetchImpl?: typeof fetch } = {}): import("node:http").RequestListener {
   return async (req, res) => {
     // Lightweight health endpoint for k8s probes. The MCP transport only
     // speaks POST /mcp and 500s a plain GET, so probes must not hit it.
@@ -89,6 +89,7 @@ export function createHttpHandler(options: { baseUrl?: string; apiKey?: string; 
     const client = createClient({
       baseUrl: options.baseUrl ?? BASE_URL, apiKey: options.apiKey ?? API_KEY,
       authorizationHeader: authHeader, allowApiKeyFallback,
+      allowJwtRetry: options.allowJwtRetry ?? apiKeyJwtRetryAllowed(),
       fetchImpl: options.fetchImpl,
       onUnauthorized: () => {
         // A batch with mixed outcomes returns 401 for the whole request.

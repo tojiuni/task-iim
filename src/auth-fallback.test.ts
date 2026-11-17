@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { currentTool, logAuthFallback, fallbackActor } from "./auth-fallback.ts";
-import { apiKeyFallbackAllowed } from "./auth-policy.ts";
+import { apiKeyFallbackAllowed, apiKeyJwtRetryAllowed } from "./auth-policy.ts";
 import { createClient } from "./client.ts";
 
 test("step 1: one safe JSON log per fallback with tool context", async () => {
@@ -20,7 +20,7 @@ test("step 1: one safe JSON log per fallback with tool context", async () => {
     let calls = 0;
     const client = createClient({
       baseUrl: "http://gq", apiKey: "SECRET_KEY", authorizationHeader: "Bearer SECRET_TOKEN",
-      allowApiKeyFallback: true,
+      allowApiKeyFallback: true, allowJwtRetry: true,
       fetchImpl: (async () => new Response("{}", { status: ++calls === 1 ? 401 : 200 })) as typeof fetch,
     });
     await currentTool.run("get_ticket", () => client.request("GET", "/api/v1/tickets/t1?Authorization=SECRET_TOKEN&api_key=SECRET_KEY"));
@@ -85,7 +85,7 @@ test("unset env blocks by default; env 1 restores fallback", async () => {
   }
 });
 
-test("allowed JWT 401 with empty API key passes through without HTTP hijack", async () => {
+test("JWT 401 with empty API key is blocked", async () => {
   let calls = 0;
   let unauthorized = 0;
   const client = createClient({
@@ -97,10 +97,10 @@ test("allowed JWT 401 with empty API key passes through without HTTP hijack", as
     }) as typeof fetch,
   });
   assert.deepEqual(await client.request("GET", "/api/v1/tickets"), {
-    ok: false, status: 401, error: "HTTP 401: original upstream failure",
+    ok: false, status: 401, error: "Authentication required",
   });
   assert.equal(calls, 1);
-  assert.equal(unauthorized, 0);
+  assert.equal(unauthorized, 1);
 });
 
 function observationJwt(payload: unknown): string {
@@ -127,7 +127,7 @@ test("fallback and blocked logs contain actor but no token or other claims", asy
     for (const allowApiKeyFallback of [true, false]) {
       let calls = 0;
       const client = createClient({
-        baseUrl: "http://gq", apiKey: "PRIVATE_API_KEY", authorizationHeader, allowApiKeyFallback,
+        baseUrl: "http://gq", apiKey: "PRIVATE_API_KEY", authorizationHeader, allowApiKeyFallback, allowJwtRetry: true,
         fetchImpl: (async () => new Response("{}", { status: ++calls === 1 ? 401 : 200 })) as typeof fetch,
       });
       await client.request("GET", "/api/v1/tickets");
@@ -146,4 +146,44 @@ test("fallback and blocked logs contain actor but no token or other claims", asy
     logAuthFallback("jwt_401", "/api/v1/tickets", undefined, true, observationJwt({ sub: "z".repeat(256) }));
     assert.deepEqual(lines.map(line => JSON.parse(line).actor_unverified), ["unknown", "unknown", "z".repeat(128)]);
   } finally { process.stderr.write = original; }
+});
+
+test("JWT retry env parsing and default-off client policy", async () => {
+  const originalEnv = process.env["ALLOW_APIKEY_JWT_RETRY"];
+  const originalWrite = process.stderr.write;
+  const lines: string[] = [];
+  process.stderr.write = ((line: string) => { lines.push(line); return true; }) as typeof originalWrite;
+  try {
+    for (const value of ["1", "true", " TRUE ", "0", "false", "", "yes", undefined]) {
+      if (value === undefined) delete process.env["ALLOW_APIKEY_JWT_RETRY"];
+      else process.env["ALLOW_APIKEY_JWT_RETRY"] = value;
+      const retry = value !== undefined && ["1", "true"].includes(value.trim().toLowerCase());
+      assert.equal(apiKeyJwtRetryAllowed(value), retry);
+      for (const allowApiKeyFallback of [false, true]) {
+        for (const authorizationHeader of [undefined, "Bearer SECRET_TOKEN"]) {
+          lines.length = 0;
+          let calls = 0;
+          const client = createClient({
+            baseUrl: "http://gq", apiKey: "SECRET_KEY", authorizationHeader, allowApiKeyFallback,
+            fetchImpl: (async () => {
+              calls++;
+              return new Response("{}", { status: authorizationHeader && calls === 1 ? 401 : 200 });
+            }) as typeof fetch,
+          });
+          const allowed = allowApiKeyFallback && (!authorizationHeader || retry);
+          assert.equal((await client.request("GET", "/api/v1/tickets")).status, allowed ? 200 : 401);
+          assert.equal(calls, authorizationHeader ? (allowed ? 2 : 1) : (allowed ? 1 : 0));
+          assert.equal(lines.length, 1);
+          const entry = JSON.parse(lines[0]);
+          assert.equal(entry.event, allowed ? "auth_fallback" : "auth_fallback_blocked");
+          assert.equal(entry.reason, authorizationHeader ? "jwt_401" : "no_authorization");
+          assert.doesNotMatch(lines[0], /SECRET|Bearer|Authorization|X-API-Key/);
+        }
+      }
+    }
+  } finally {
+    process.stderr.write = originalWrite;
+    if (originalEnv === undefined) delete process.env["ALLOW_APIKEY_JWT_RETRY"];
+    else process.env["ALLOW_APIKEY_JWT_RETRY"] = originalEnv;
+  }
 });

@@ -126,7 +126,7 @@ test("a 401 on the JWT attempt is retried once with X-API-Key, and succeeds", as
     }
     return new Response(JSON.stringify({ id: "t6" }), { status: 200, headers: { "content-type": "application/json" } });
   }) as unknown as typeof fetch;
-  const c = createClient({ allowApiKeyFallback: true, baseUrl: "http://gq", apiKey: "SERVICE-KEY", authorizationHeader: "Bearer expired.jwt.here", fetchImpl });
+  const c = createClient({ allowApiKeyFallback: true, allowJwtRetry: true, baseUrl: "http://gq", apiKey: "SERVICE-KEY", authorizationHeader: "Bearer expired.jwt.here", fetchImpl });
   const r = await c.request("GET", "/api/v1/tickets/t6");
   assert.equal(calls, 2, "expected exactly one retry");
   assert.equal(seenAuthByCall[0], "Bearer expired.jwt.here");
